@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Send Feedback</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 30px 16px;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 650px;
+            margin: 30px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 8px;
+        }
+
+        .description {
+            color: #64748b;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+
+        label {
+            display: block;
+            margin: 17px 0 7px;
+            font-weight: 600;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font-size: 15px;
+            font-family: inherit;
+        }
+
+        textarea {
+            min-height: 140px;
+            resize: vertical;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: 2px solid #93c5fd;
+            border-color: #2563eb;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 24px;
+            padding: 13px;
+            border: none;
+            border-radius: 7px;
+            background: #2563eb;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .message {
+            padding: 12px;
+            margin-bottom: 18px;
+            border-radius: 7px;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Hidden spam-trap field. Normal users should not fill this. */
+        .website-field {
+            position: absolute;
+            left: -10000px;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+        @media (max-width: 500px) {
+            .container {
+                padding: 22px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="container">
+
+        <a href="/" class="back-link">← Back to Product Search</a>
+
+        <h1>Share Your Feedback</h1>
+
+        <p class="description">
+            Your feedback helps improve this product search application.
+            Report problems, suggest features, or share your experience.
+        </p>
+
+        {% if message %}
+            <div class="message" role="status">
+                {{ message }}
+            </div>
+        {% endif %}
+
+        <form action="/feedback" method="POST">
+
+            <!-- Spam-trap field: leave empty. -->
+            <div class="website-field" aria-hidden="true">
+                <label for="website">Website</label>
+                <input
+                    type="text"
+                    id="website"
+                    name="website"
+                    tabindex="-1"
+                    autocomplete="off"
+                >
+            </div>
+
+            <label for="name" placeholder="Enter Your name">Your Name *</label>
+            <input
+                type="text"
+                id="name"
+                name="name"
+                maxlength="80"
+                required
+                value="{{ form.get('name', '') }}"
+            >
+
+            <label for="email" placeholder="Your Email is Mandatory">Your Email *</label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                maxlength="254"
+                required
+                value="{{ form.get('email', '') }}"
+            >
+
+            <label for="category">Feedback Category *</label>
+            <select id="category" name="category" required>
+                <option value="">Select a category</option>
+
+                {% for item in categories %}
+                    <option
+                        value="{{ item }}"
+                        {% if form.get('category') == item %}selected{% endif %}
+                    >
+                        {{ item }}
+                    </option>
+                {% endfor %}
+            </select>
+
+            <label for="rating">Your Rating</label>
+            <select id="rating" name="rating">
+                <option value="">Select a rating (optional)</option>
+                {% for number in range(1, 6) %}
+                    <option
+                        value="{{ number }}"
+                        {% if form.get('rating') == number|string %}selected{% endif %}
+                    >
+                        {{ number }} / 5
+                    </option>
+                {% endfor %}
+            </select>
+
+            <label for="feature">Page or Feature</label>
+            <input
+                type="text"
+                id="feature"
+                name="feature"
+                maxlength="100"
+                placeholder="Example: Product Search"
+                value="{{ form.get('feature', '') }}"
+            >
+
+            <label for="subject">Subject *</label>
+            <input
+                type="text"
+                id="subject"
+                name="subject"
+                maxlength="120"
+                required
+                value="{{ form.get('subject', '') }}"
+            >
+
+            <label for="message">Your Feedback *</label>
+            <textarea
+                id="message"
+                name="message"
+                maxlength="3000"
+                required
+                placeholder="Tell us about your experience..."
+            >{{ form.get('message', '') }}</textarea>
+
+            <button type="submit">Submit Feedback</button>
+
+        </form>
+
+    </main>
+
+</body>
+</html>

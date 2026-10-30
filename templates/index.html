@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SARTHI | Find your next deal</title>
+    <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/loader.css') }}"
+    >
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/search-page.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hamster.css') }}">
+    <noscript><style>#search-loader { display:none; }</style></noscript>
+</head>
+
+<body>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="SARATHI home">SARATHI<span class="brand-dot">.</span></a>
+        <a class="feedback-link" href="{{ url_for('feedback') }}">Share feedback <span aria-hidden="true">&#8599;</span></a>
+    </header>
+    <main>
+    <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow"><span aria-hidden="true"></span> LESS SEARCHING. MORE DISCOVERING.</p>
+        <h1 id="page-title">Good finds.<br><span>Great possibilities.</span></h1>
+        <p class="hero-description">Your next favourite thing is out there. Explore products<br class="desktop-break"> from Amazon and Flipkart, all in one place.</p>
+
+    <label class="sr-only" for="product-query">Search products</label>
+    <form class="search-form" method="POST"  id="search-form" action="/">
+        <input
+            type="text"
+            name="query"
+            id="product-query"
+            placeholder="Search products, e.g. Samsung A56"
+            value="{{ query }}"
+            required
+        >
+        <button type="submit">Find products <span aria-hidden="true">&#8594;</span></button>
+    </form>
+    <p class="search-hint">One search. A world of possibilities.</p>
+    <div class="retailers" aria-label="Retailers searched"><span>EXPLORE ACROSS</span><strong>amazon<span class="amazon-dot">.</span></strong><span class="retailer-divider"></span><strong>Flipkart</strong></div>
+    <div class="orbit orbit-one" aria-hidden="true"></div><div class="orbit orbit-two" aria-hidden="true"></div>
+    </section>
+    <section class="results-section" aria-label="Product results">
+    <div class="section-heading"><div><p class="eyebrow">THE DISCOVERY EDIT</p><h2>Find something you love.</h2></div><span class="section-note">A little curiosity goes a long way.</span></div>
+
+    <!-- Hamster loading overlay -->
+        <div
+            id="search-loader"
+            class="search-loader active"
+            aria-live="polite"
+            aria-hidden="false"
+        >
+            <div class="loader-content">
+
+                <!-- Original Uiverse hamster animation -->
+                <div
+                    aria-label="Orange and tan hamster running in a metal wheel"
+                    role="img"
+                    class="wheel-and-hamster"
+                >
+                    <div class="wheel"></div>
+
+                    <div class="hamster">
+                        <div class="hamster__body">
+                            <div class="hamster__head">
+                                <div class="hamster__ear"></div>
+                                <div class="hamster__eye"></div>
+                                <div class="hamster__nose"></div>
+                            </div>
+
+                            <div class="hamster__limb hamster__limb--fr"></div>
+                    <div class="hamster__limb hamster__limb--fl"></div>
+                    <div class="hamster__limb hamster__limb--br"></div>
+                    <div class="hamster__limb hamster__limb--bl"></div>
+                    <div class="hamster__tail"></div>
+                </div>
+            </div>
+
+            <div class="spoke"></div>
+        </div>
+
+                <div id="loader-message" class="loader-message">
+                    Getting things ready...
+                </div>
+
+                <div class="loader-submessage">
+                    Just a moment. We are getting everything ready for you.
+                </div>
+
+            </div>
+        </div>
+
+    <div id="results-container" aria-live="polite">
+        {% if message %}
+            <p>{{ message }}</p>
+        {% endif %}
+
+        <div class="products-grid">
+            {% for product in products %}
+                <div class="product-card">
+                    <p class="product-retailer">{{ product.retailer }}</p>
+
+                    {% if product.image_url %}
+                        <div class="product-image-wrapper">
+                        <img
+                            src="{{ product.image_url }}"
+                            alt="{{ product.name }}"
+                            loading="lazy"
+                        >
+                        </div>
+                    {% endif %}
+
+                   <h3 class="product-title"
+                        title="{{ product.name }}"
+                        aria-label="{{ product.name }}">
+                        {{ product.name[:120] }}{% if product.name|length > 120 %}...{% endif %}
+                    </h3>
+                    {% if product.highlights %}
+                        <div class="product-highlights">
+                            {% for highlight in product.highlights %}
+                                <span class="highlight-chip">{{ highlight }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% if product.price is not none %}
+                        <p class="product-price">
+                            ₹{{ product.price }}
+                        </p>
+                    {% endif %}
+
+                    {% if product.original_price is not none %}
+                        <p class="product-original-price">
+                            Original price: ₹{{ product.original_price }}
+                        </p>
+                    {% endif %}
+
+                    {% if product.rating is not none %}
+                        <p class="product-rating">Rating: {{ product.rating }}</p>
+                    {% endif %}
+
+                    {% if product.availability %}
+                        <p class="product-availability">{{ product.availability }}</p>
+                    {% endif %}
+
+                    {% if product.url %}
+                        <a class="product-button" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">
+                            View Product
+                        </a>
+                    {% endif %}
+                </div>
+            {% else %}
+                {% if not message %}
+                <div class="discovery-empty"><span class="empty-icon" aria-hidden="true">&#10022;</span><h3>Your next discovery starts here.</h3><p>Search for a product above to explore available listings.</p></div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    </section>
+    </main>
+    <footer class="site-footer"><span>SARTHI. Made for the curious.</span><span>Discover. Compare. Decide.</span></footer>
+    <span aria-hidden="true"></span> Beta 1.0.</p>
+    <script
+    src="{{ url_for('static', filename='js/search.js') }}"
+    defer
+></script>
+</body>
+</html>
