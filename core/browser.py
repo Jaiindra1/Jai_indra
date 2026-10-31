@@ -169,6 +169,11 @@ def create_browser():
         if browser_path:
             _validate_binaries(browser_path, driver_path)
             options.binary_location = browser_path
+            if _serverless() and browser_path == str(BUNDLE / "chromium"):
+                # This binary is chrome-headless-shell. With a custom profile,
+                # ChromeDriver creates the required initial page only when the
+                # correct browserName is supplied (chrome_launcher.cc).
+                options.set_capability("browserName", "chrome-headless-shell")
             service = Service(executable_path=driver_path, env=env)
             # Keep a separate Selenium driver-path environment variable from
             # overriding the validated application configuration.

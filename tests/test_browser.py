@@ -60,6 +60,7 @@ class BrowserTests(unittest.TestCase):
             service = chrome.call_args.kwargs["service"]
             self.assertEqual(service.path, str(browser.BUNDLE / "chromedriver"))
             self.assertEqual(options.binary_location, str(browser.BUNDLE / "chromium"))
+            self.assertEqual(options.capabilities["browserName"], "chrome-headless-shell")
             for flag in ("--headless=new", "--no-sandbox", "--disable-gpu", "--window-size=1365,900"):
                 self.assertIn(flag, options.arguments)
             self.assertEqual(service.env["SE_OFFLINE"], "true")
