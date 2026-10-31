@@ -145,6 +145,7 @@ def browser_environment(refresh=False):
         cached_chrome = list(cache.glob(f"chrome/**/{browser_name}"))[:3] if cache.is_dir() else []
         cached_driver = list(cache.glob(f"chromedriver/**/{driver_name}"))[:3] if cache.is_dir() else []
         event("browser_environment", platform=platform.system(), architecture=platform.machine(),
+              execution_region=os.getenv("VERCEL_REGION", "local"),
               selenium_version=version("selenium"), browser_on_path=browser_on_path,
               browser_installed=any(browsers) or bool(configured_browser and Path(configured_browser).is_file()),
               driver_on_path=any(drivers), chrome_in_manager_cache=bool(cached_chrome),

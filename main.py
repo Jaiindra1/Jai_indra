@@ -9,6 +9,8 @@ from core import search_diagnostics as diagnostics
 from core.browser import browser_health
 from services.search_pagination import search_page, InvalidCursor, SearchUnavailable
 from services.product_details import product_path, load_product, inr, InvalidProductLink, ExpiredProductLink
+from services.product_comparison import compare_product, comparison_target, comparison_query
+from retailers.pagination import page_url
 
 
 app = Flask(
@@ -25,6 +27,8 @@ app.jinja_env.filters["inr"] = inr
 def product_detail(token):
     try:
         product = load_product(token)
+        product["comparison_retailer"] = comparison_target(product)
+        product["comparison_search_url"] = page_url(product["comparison_retailer"], comparison_query(product), 1)
         response = app.make_response(render_template("product_detail.html", product=product, error=None))
     except InvalidProductLink as error:
         response = app.make_response((render_template("product_detail.html", product=None, error=str(error)),
@@ -32,6 +36,27 @@ def product_detail(token):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+@app.post("/api/product/compare")
+def product_compare():
+    with diagnostics.request_scope() as request_id:
+        data = request.get_json(silent=True)
+        try:
+            if not isinstance(data, dict) or not isinstance(data.get("token"), str):
+                raise InvalidProductLink("Choose a product from search to compare its prices.")
+            product = load_product(data["token"])
+            result = compare_product(product)
+            response = jsonify(result)
+            if result["status"] == "busy":
+                response.status_code = 503
+                response.headers["Retry-After"] = "2"
+        except InvalidProductLink as error:
+            response = jsonify({"status": "invalid_product", "message": str(error)})
+            response.status_code = 410 if isinstance(error, ExpiredProductLink) else 400
+        response.headers["X-Search-Request-ID"] = request_id
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 @app.get("/api/browser-health")

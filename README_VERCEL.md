@@ -24,7 +24,7 @@ URL. Missing history, offers, delivery and warranty data are labelled honestly;
 sample prices, accounts, recommendations and tracking data are not displayed.
 
 Snapshots are signed server-side with a separate signing salt, require no database
-or second scrape, and expire after 24 hours (or earlier if the deployment key
+for displaying the selected listing, and expire after 24 hours (or earlier if the deployment key
 changes). Invalid links return 404 and expired links 410 with a search-page link.
 Snapshots use `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 Detail tokens are attached only to outgoing search batches, not cursor buffers.
@@ -40,6 +40,30 @@ npx --yes --package tailwindcss@3.4.17 tailwindcss -c scripts/product-tailwind.c
 
 The hamster animation uses 12.6px instead of its previous effective 14px base,
 reducing all em-based dimensions by 10%.
+
+## Live cross-retailer comparison
+
+Opening a signed product page automatically calls `POST /api/product/compare`
+with its snapshot token. Both retailer rows remain visible. The other retailer
+is searched separately for the selected model and variant; this does not delay
+the initial search response. The existing Selenium page adapters and browser
+lock are reused, with a 14-second navigation/readiness budget and no database.
+
+Matching checks brand, model identifiers, model family/suffix, network variant,
+storage, RAM and colour where listed. Phone listings with incomplete selected
+variant details cannot produce a verified comparison. A cheaper different
+variant is rejected. Similar listings missing required evidence appear in a
+separate, explicitly unverified panel, without a claimed saving. This conservative
+listing matcher can miss equivalent wording and does not replace checking the
+retailer's final product options and checkout price.
+
+Unavailable retailers retain their row, a Retry action and a direct retailer
+search link; no price is fabricated. Structured logs include `comparison_finished`,
+`comparison_retailer_failed`, execution region and safe navigation HTTP status
+and body length. No retailer response text or query is logged by those probes.
+The deployment uses the single Mumbai (`bom1`) region, supported on Hobby,
+to reduce distance to Indian marketplaces. Region locality does not guarantee
+Amazon will accept requests from Vercel infrastructure.
 
 ## Incremental search and infinite scrolling
 

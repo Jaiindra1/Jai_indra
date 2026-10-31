@@ -20,8 +20,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
   <title>{{ product.name ~ ' | SARATHI' if product else 'Product unavailable | SARATHI' }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/product-detail.css', v='detail-1') }}">
-  <script src="{{ url_for('static', filename='js/product-detail.js', v='detail-1') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/product-detail.css', v='comparison-1') }}">
+  <script src="{{ url_for('static', filename='js/product-detail.js', v='comparison-1') }}" defer></script>
 </head>
 <body class="bg-background font-body-md text-on-surface antialiased">
   <aside class="detail-sidebar hidden lg:flex fixed left-0 top-0 h-screen w-64 bg-surface-container-lowest border-r border-outline-variant flex-col justify-between z-30">
@@ -34,7 +34,7 @@
         <a href="{{ url_for('home') }}" data-back-search class="detail-nav">{{ icon('back') }} Back to search</a>
         <a href="#overview" class="detail-nav active">{{ icon('search') }} Product overview</a>
         <a href="#details" class="detail-nav">{{ icon('list') }} Listing highlights</a>
-        <a href="#retailer-matrix" class="detail-nav">{{ icon('store') }} Retailer listing</a>
+        <a href="#retailer-matrix" class="detail-nav">{{ icon('store') }} Price comparison</a>
         <a href="#price-history" class="detail-nav">{{ icon('chart') }} Price information</a>
         <p class="text-outline text-label-sm uppercase tracking-wider px-space-sm pt-space-xl pb-space-xs">Support</p>
         <a href="{{ url_for('feedback') }}" class="detail-nav">{{ icon('info') }} Share feedback</a>
@@ -104,7 +104,7 @@
                 <div class="bg-surface-container rounded-lg p-space-sm"><p class="text-label-sm text-outline">Price history</p><p class="text-body-md font-semibold mt-space-xs">Not available</p></div>
               </div>
             </div>
-            <div class="flex flex-col sm:flex-row gap-space-sm"><a id="retailer-link" class="detail-primary flex-1" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">View deal on {{ product.retailer }} {{ icon('external') }}</a><a class="detail-secondary" href="#retailer-matrix">{{ icon('store') }} Listing details</a></div>
+            <div class="flex flex-col sm:flex-row gap-space-sm"><a id="retailer-link" class="detail-primary flex-1" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">View deal on {{ product.retailer }} {{ icon('external') }}</a><a class="detail-secondary" href="#retailer-matrix">{{ icon('store') }} Compare prices</a></div>
           </div>
         </section>
         <section id="details" class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
@@ -119,9 +119,16 @@
           <div class="grid grid-cols-2 md:grid-cols-3 gap-space-sm mt-space-lg"><div class="bg-surface-container-low rounded-lg p-space-md"><p class="text-label-sm text-outline">Current listing</p><p class="text-price-card font-semibold mt-space-xs">{{ product.price | inr }}</p></div><div class="bg-surface-container-low rounded-lg p-space-md"><p class="text-label-sm text-outline">Original listed price</p><p class="text-price-card font-semibold mt-space-xs">{{ product.original_price | inr }}</p></div><div class="bg-surface-container-low rounded-lg p-space-md"><p class="text-label-sm text-outline">Listed saving</p><p class="text-price-card font-semibold mt-space-xs">{{ product.saving | inr }}</p></div></div>
           <div class="history-empty mt-space-md text-center rounded-lg border border-dashed border-outline-variant p-space-xl text-outline">{{ icon('chart') }}<p class="font-semibold text-on-surface-variant mt-space-sm">No price history available for this listing</p><p class="text-body-sm mt-space-xs">Historical lows, price trends and buying recommendations cannot be verified from this search snapshot.</p></div>
         </section>
-        <section id="retailer-matrix" class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
-          <div class="flex items-center gap-space-sm text-primary">{{ icon('store') }}<h2 class="text-headline-md text-on-surface font-semibold">Retailer listing</h2></div><p class="text-body-sm text-outline mt-space-xs">This is the selected product's listing. Other retailers' prices are not assumed to be equivalent.</p>
-          <div class="overflow-x-auto mt-space-lg"><table class="w-full text-left text-body-md detail-table"><thead><tr class="text-label-sm uppercase text-outline bg-surface-container-low"><th>Retailer</th><th>Listed price</th><th>Availability</th><th>Action</th></tr></thead><tbody><tr><td class="font-semibold">{{ product.retailer }}</td><td class="font-semibold">{{ product.price | inr }}</td><td>{{ product.availability }}</td><td><a class="text-primary font-semibold inline-flex items-center gap-space-xs" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">View deal {{ icon('external') }}</a></td></tr></tbody></table></div>
+        <section id="retailer-matrix" class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm" data-selected-price="{{ product.price if product.price is not none else '' }}" data-comparison-retailer="{{ product.comparison_retailer }}">
+          <div class="flex items-center justify-between gap-space-md flex-wrap"><div class="flex items-center gap-space-sm text-primary">{{ icon('store') }}<h2 class="text-headline-md text-on-surface font-semibold">Price comparison</h2></div><button id="compare-button" class="detail-secondary" type="button">Check prices</button></div>
+          <p class="text-body-sm text-outline mt-space-xs">We look for the same model, storage, RAM and colour on the other retailer. Confirm the final price and availability at checkout.</p>
+          <p id="comparison-status" class="comparison-status mt-space-md" role="status" aria-live="polite">Checking {{ product.comparison_retailer }} for this product...</p>
+          <div class="overflow-x-auto mt-space-md"><table class="w-full text-left text-body-md detail-table"><thead><tr class="text-label-sm uppercase text-outline bg-surface-container-low"><th>Retailer</th><th>Listed price</th><th>Comparison status</th><th>Action</th></tr></thead><tbody>
+            <tr><td class="font-semibold">{{ product.retailer }}</td><td class="font-semibold">{{ product.price | inr }}</td><td>Selected listing<br><span class="text-body-sm text-outline">From your search snapshot</span></td><td><a class="text-primary font-semibold inline-flex items-center gap-space-xs" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">View deal {{ icon('external') }}</a></td></tr>
+            <tr id="comparison-other"><td class="font-semibold">{{ product.comparison_retailer }}</td><td id="comparison-price" class="font-semibold">Checking...</td><td id="comparison-match">Looking for the same variant</td><td><a id="comparison-link" class="text-primary font-semibold inline-flex items-center gap-space-xs" href="{{ product.comparison_search_url }}" target="_blank" rel="noopener noreferrer">Search on {{ product.comparison_retailer }} {{ icon('external') }}</a></td></tr>
+          </tbody></table></div>
+          <div id="comparison-related" class="comparison-related mt-space-md" hidden><p class="font-semibold">Similar listing &middot; variant details need confirmation</p><p id="comparison-related-name" class="mt-space-xs"></p><p id="comparison-related-price" class="mt-space-xs font-semibold"></p><a id="comparison-related-link" class="text-primary font-semibold inline-flex items-center gap-space-xs mt-space-sm" target="_blank" rel="noopener noreferrer">Review variant on retailer {{ icon('external') }}</a></div>
+          <p class="text-body-sm text-outline mt-space-md">Prices are compared only for verified matching variants. Delivery fees, bank offers and exchange discounts can change the total.</p>
         </section>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-space-lg">
           <section class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm"><h2 class="text-headline-sm font-semibold">Product specifications</h2>{% if product.specifications %}<dl class="mt-space-md space-y-space-sm">{% for key, value in product.specifications.items() %}<div class="flex justify-between gap-space-md border-b border-outline-variant/30 pb-space-sm"><dt class="text-outline">{{ key }}</dt><dd class="text-right">{{ value }}</dd></div>{% endfor %}</dl>{% else %}<p class="text-body-md text-outline mt-space-md">Full specifications were not included in the search listing. Open {{ product.retailer }} for the manufacturer's complete specifications.</p>{% endif %}</section>

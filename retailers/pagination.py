@@ -22,7 +22,9 @@ class RetailerPage:
 READY_SCRIPT = r"""
 const selector = arguments[0];
 const cards = document.querySelectorAll(selector).length;
-if (cards >= 8) return {kind:'cards', cards};
+const httpStatus = performance.getEntriesByType('navigation')[0]?.responseStatus || 0;
+if (httpStatus >= 400) return {kind:'upstream_http_' + httpStatus, cards, http_status:httpStatus};
+if (cards >= 8) return {kind:'cards', cards, http_status:httpStatus};
 const text = (document.body?.innerText || '').slice(0,16000).toLowerCase();
 if (/captcha|robot check|verify you are human|access denied|automated access/.test(text))
   return {kind:'blocked_page', cards};
@@ -30,7 +32,7 @@ if (/sorry.{0,12}something went wrong|service unavailable|503 service/.test(text
   return {kind:'upstream_error', cards};
 if (/no results for|no results found|did not match any products|0 results for/.test(text))
   return {kind:'empty', cards};
-if (cards && document.readyState === 'complete') return {kind:'cards', cards};
+if (cards && document.readyState === 'complete') return {kind:'cards', cards, http_status:httpStatus};
 return null;
 """
 
@@ -77,6 +79,8 @@ def scrape_page(driver, retailer, query, page, deadline):
             driver.execute_cdp_cmd("Page.stopLoading", {})
         diagnostics.event("navigation_finished", retailer=retailer, page=page,
                           seconds=round(monotonic() - navigated, 3))
+        probe = driver.execute_script("const n=performance.getEntriesByType('navigation')[0]; return {http_status:n?.responseStatus||0, body_characters:document.body?.innerText.length||0}")
+        diagnostics.event("navigation_probe", retailer=retailer, page=page, **probe)
         stage = "results_wait"
         waiting = monotonic()
         remaining = deadline - monotonic() - 0.5
@@ -91,7 +95,7 @@ def scrape_page(driver, retailer, query, page, deadline):
         except TimeoutException:
             raise RetailerSearchError(retailer, "results_timeout") from None
         diagnostics.event("results_ready", retailer=retailer, page=page, page_kind=ready["kind"],
-                          cards=ready["cards"], seconds=round(monotonic() - waiting, 3))
+                          cards=ready["cards"], http_status=ready.get("http_status", 0), seconds=round(monotonic() - waiting, 3))
         if ready["kind"] == "empty":
             return RetailerPage([], False)
         if ready["kind"] != "cards":
