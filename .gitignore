@@ -1,0 +1,11 @@
+.env
+.env.*
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.db
+*.sqlite3
+data/
+.vercel/
+.repo-publish/

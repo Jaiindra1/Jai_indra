@@ -7,7 +7,20 @@ from services.feedback_service import send_feedback_email
 from retailers.outcomes import AllRetailersFailed
 
 
-app = Flask(__name__, template_folder="templates")
+app = Flask(
+    __name__,
+    template_folder="templates",
+    static_folder="public/static",
+    static_url_path="/static",
+)
+
+
+@app.get("/health")
+def health():
+    """Application liveness only; does not launch Selenium or contact retailers."""
+    response = jsonify({"status": "ok"})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 FEEDBACK_CATEGORIES = [
