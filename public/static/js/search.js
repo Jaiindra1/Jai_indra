@@ -310,7 +310,7 @@ const pager = new window.SandhyaPager({
         else hideLoader();
         const loadingMore = state.loading && state.loaded;
         paginationStatus.classList.toggle("loading", loadingMore);
-        paginationStatus.textContent = state.error || (loadingMore ? "Loading more products?" : state.loaded && !state.hasMore ? "You?ve reached the end of this search." : "");
+        paginationStatus.textContent = state.error || (loadingMore ? "Loading more products..." : state.loaded && !state.hasMore ? "You have reached the end of this search." : "");
         moreButton.hidden = !state.error && !state.hasMore;
         moreButton.disabled = state.loading;
         moreButton.textContent = state.error ? "Retry" : "Load more";

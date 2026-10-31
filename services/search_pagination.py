@@ -207,7 +207,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
             diagnostics.event("search_failed", stage=operation_stage, **diagnostics.error_details(error))
             raise SearchUnavailable({"items": [], "products": [], "has_more": False, "next_cursor": None,
                                      "warnings": [{"retailer": "Both retailers", "stage": operation_stage,
-                                                   "message": "The search browser could not start."}],
+                                                   "message": "The search could not finish."}],
                                      "message": "Search is temporarily unavailable. Please retry."}) from None
     # Every buffered listing was deduplicated when its page was scraped. Keep
     # unsent products in the token; no worker cache or repeated navigation.
