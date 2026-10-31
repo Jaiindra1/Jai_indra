@@ -101,7 +101,10 @@ metadata in the comparison. Images remain enabled and parsers also inspect lazy
 image attributes; eager navigation avoids waiting for every download. A single
 browser is reused sequentially if another retailer must be attempted. A semaphore
 and a `/tmp` file lock restrict browser use within a function instance, including
-multiple Python workers. Busy searches receive 503 with `Retry-After: 2` rather
+multiple Python workers. Serverless ChromeDriver starts in a dedicated process
+group. Normal shutdown still calls `driver.quit()`; a three-second watchdog
+kills that owned group if shutdown stalls, so parsed results are not held behind
+an unresponsive Chrome shutdown. Windows development keeps normal shutdown. Busy searches receive 503 with `Retry-After: 2` rather
 than launching unbounded parallel browsers.
 
 Navigation and result waits share an absolute operation deadline (13 seconds for

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import tarfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,42 @@ from main import app
 
 
 class BrowserTests(unittest.TestCase):
+    def test_shutdown_watchdog_releases_a_stalled_quit(self):
+        stopped = threading.Event()
+        driver = MagicMock()
+        driver._sandhya_process_group = 12345
+        driver.quit.side_effect = lambda: stopped.wait(1)
+        real_timer = threading.Timer
+        with patch.object(browser, "Timer", side_effect=lambda delay, callback, args: real_timer(0.01, callback, args)), \
+             patch.object(browser, "_kill_browser_group", side_effect=lambda group: stopped.set()) as force:
+            browser._quit_browser(driver)
+        self.assertTrue(stopped.is_set())
+        driver.quit.assert_called_once()
+        force.assert_called_once_with(12345)
+
+    def test_shutdown_watchdog_is_cancelled_after_normal_quit(self):
+        driver = MagicMock()
+        driver._sandhya_process_group = 12345
+        with patch.object(browser, "Timer") as timer:
+            browser._quit_browser(driver)
+        driver.quit.assert_called_once()
+        timer.assert_called_once_with(3, browser._kill_browser_group, args=(12345,))
+        timer.return_value.start.assert_called_once()
+        timer.return_value.cancel.assert_called_once()
+        timer.return_value.join.assert_called_once()
+
+    def test_forced_cleanup_targets_only_the_owned_dedicated_group(self):
+        with patch.object(browser.os, "getpgrp", return_value=10, create=True), \
+             patch.object(browser.os, "getpgid", return_value=20, create=True), \
+             patch.object(browser.signal, "SIGKILL", 9, create=True), \
+             patch.object(browser.os, "killpg", create=True) as kill:
+            browser._kill_browser_group(20)
+            kill.assert_called_once_with(20, browser.signal.SIGKILL)
+            kill.reset_mock()
+            browser._kill_browser_group(10)
+            browser._kill_browser_group(30)
+            kill.assert_not_called()
+
     def test_only_one_browser_can_hold_the_instance_slot(self):
         with patch.object(browser, "_serverless", return_value=False), \
              patch.object(browser, "create_browser", return_value=MagicMock()) as create, \
@@ -96,6 +133,7 @@ class BrowserTests(unittest.TestCase):
              patch.object(browser.diagnostics, "browser_environment"), \
              patch.object(browser.diagnostics, "enabled", return_value=False), \
              patch.object(browser.tempfile, "TemporaryDirectory", return_value=temporary), \
+             patch.object(browser.Service, "process", SimpleNamespace(pid=12345), create=True), \
              patch.object(browser.webdriver, "Chrome", return_value=driver) as chrome:
             result = browser.create_browser()
             options = chrome.call_args.kwargs["options"]

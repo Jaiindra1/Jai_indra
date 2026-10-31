@@ -9,11 +9,12 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
-from threading import Lock, BoundedSemaphore
+from threading import Lock, BoundedSemaphore, Timer
 from time import monotonic
 from xml.sax.saxutils import escape
 
@@ -158,10 +159,28 @@ def _navigation_settings():
     return strategy, timeout
 
 
+def _kill_browser_group(group):
+    """Kill only the dedicated subprocess group created for this browser."""
+    try:
+        if group > 1 and group != os.getpgrp() and os.getpgid(group) == group:
+            os.killpg(group, signal.SIGKILL)
+            diagnostics.event("browser_cleanup_forced", reason="shutdown_deadline")
+    except ProcessLookupError:
+        pass  # Normal quit already stopped it.
+    except OSError as error:
+        diagnostics.event("browser_cleanup_force_failed", **diagnostics.error_details(error))
+
+
 def _quit_browser(driver):
-    """Observe the existing quit operation without imposing a time guarantee."""
+    """Call quit; stop an owned serverless process group if shutdown stalls."""
     started = monotonic()
     diagnostics.event("browser_cleanup_started")
+    watchdog = None
+    group = getattr(driver, "_sandhya_process_group", None)
+    if type(group) is int:
+        watchdog = Timer(3, _kill_browser_group, args=(group,))
+        watchdog.daemon = True
+        watchdog.start()
     try:
         driver.quit()
     except Exception as error:
@@ -171,6 +190,9 @@ def _quit_browser(driver):
     else:
         diagnostics.event("browser_cleanup_finished", seconds=round(monotonic() - started, 2))
     finally:
+        if watchdog is not None:
+            watchdog.cancel()
+            watchdog.join()
         temporary = getattr(driver, "_sandhya_workspace", None)
         if temporary is not None:
             temporary.cleanup()
@@ -221,12 +243,15 @@ def create_browser(*, scraping=False):
                 # ChromeDriver creates the required initial page only when the
                 # correct browserName is supplied (chrome_launcher.cc).
                 options.set_capability("browserName", "chrome-headless-shell")
-            service = Service(executable_path=driver_path, env=env)
+            service = Service(executable_path=driver_path, env=env,
+                              popen_kw={"start_new_session": True} if _serverless() else {})
             # Keep a separate Selenium driver-path environment variable from
             # overriding the validated application configuration.
             service.path = driver_path
             diagnostics.event("browser_configuration", mode="explicit", selenium_manager=False)
             driver = webdriver.Chrome(service=service, options=options)
+            if _serverless():
+                driver._sandhya_process_group = service.process.pid
         else:
             # Preserve localhost Windows discovery when neither path is set.
             diagnostics.event("browser_configuration", mode="local_discovery", selenium_manager=True)
