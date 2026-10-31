@@ -10,7 +10,7 @@ Does not write products to the database.
 """
 
 import logging
-from time import monotonic
+from time import monotonic, sleep
 import re
 from urllib.parse import quote, urljoin, urlparse
 
@@ -249,9 +249,20 @@ def search_amazon_page(driver, query: str, *, page: int = 1, deadline: float, ma
     Used by standalone search, live search/pagination and price comparison.
     First-page navigation uses the same canonical URL as local search_amazon.
     """
-    return scrape_search_page(driver, "Amazon", build_amazon_search_url(query, page), page,
-                              deadline, PRODUCT_CARD_SELECTOR, parse_amazon_product_cards,
-                              max_results=max_results)
+    url = build_amazon_search_url(query, page)
+    for attempt in range(2):
+        try:
+            return scrape_search_page(driver, "Amazon", url, page, deadline,
+                                      PRODUCT_CARD_SELECTOR, parse_amazon_product_cards,
+                                      max_results=max_results)
+        except RetailerSearchError as error:
+            # One normal server-error retry in the SAME browser. Never retry
+            # a challenge, access restriction, unknown error page or deadline.
+            if attempt or error.http_status != 503 or error.page_kind != "upstream_error" or deadline - monotonic() < 3:
+                raise
+            diagnostics.event("retailer_retry", retailer="Amazon", page=page, attempt=2,
+                              stage=error.stage, page_kind=error.page_kind)
+            sleep(0.5)
 
 
 def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = True) -> list[dict]:

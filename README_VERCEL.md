@@ -77,7 +77,10 @@ all use the same parser and URL builder. Caller-owned browsers are reused.
 The first page uses the original working `/s?k=...` URL, with `page` added only
 for subsequent pages. Font blocking and eager navigation preserve image URLs.
 Flipkart remains preferred for the initial response, so Amazon does not delay
-its first real products. Error pages stop immediately, with no CAPTCHA solving,
+its first real products. Error pages are identified immediately. A recognized generic HTTP 503 gets at
+most one retry after 0.5 seconds, in the same browser and only when at least
+three seconds remain in the existing deadline. CAPTCHA, access-denied, automated-
+access and unknown pages are never retried. There is no CAPTCHA solving,
 proxy rotation, identity spoofing, external product API or persistent storage.
 
 Safe `navigation_probe` logs classify product results, confirmed empty pages,
@@ -94,7 +97,10 @@ returned real prices on both retailers. Both Chrome 156 and Chrome 153 headless
 shell returned Amazon products on Windows. Vercel uses Linux Chromium
 153.0.8010.0 with compatible ChromeDriver 153.0.8010.52. These Windows checks do
 not prove Linux/Vercel access; before this change, deployed Amazon requests
-repeatedly returned HTTP 503. Production must be checked after every deployment.
+repeatedly returned HTTP 503. An initial production check of this change returned eight real Amazon products
+in 4.75 seconds, but other searches and comparison still returned 503. Access
+was intermittent; this is not a claim of reliable production comparison.
+Production must be checked after every deployment.
 
 Explicit live verification (contacts the retailers):
 

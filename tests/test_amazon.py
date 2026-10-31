@@ -1,6 +1,7 @@
 """Existing Amazon extraction and shared navigation, without retailer requests."""
 from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
+from time import monotonic
 import unittest
 
 from retailers import amazon, pagination
@@ -88,6 +89,28 @@ class AmazonTests(unittest.TestCase):
         error = RetailerSearchError("Amazon", "upstream_http_503", page_kind="upstream_error", http_status=503)
         self.assertIn("HTTP 503", error.public_message)
         self.assertNotIn("restricting", error.public_message)
+
+    def test_one_generic_server_error_retry_reuses_browser_and_deadline(self):
+        driver = self.driver()
+        error = RetailerSearchError("Amazon", "upstream_http_503", page_kind="upstream_error", http_status=503)
+        page = RetailerPage([{"name": "real listing"}], False)
+        deadline = monotonic()+10
+        with patch.object(amazon, "scrape_search_page", side_effect=[error, page]) as scrape, \
+             patch.object(amazon, "sleep") as pause:
+            self.assertIs(amazon.search_amazon_page(driver, "phone", deadline=deadline), page)
+        pause.assert_called_once_with(0.5)
+        self.assertEqual(scrape.call_count, 2)
+        self.assertTrue(all(call.args[0] is driver and call.args[4] == deadline for call in scrape.call_args_list))
+
+    def test_access_restrictions_unknown_errors_and_deadlines_are_not_retried(self):
+        for kind, budget in [("captcha",10),("automated_access",10),("unclassified",10),("upstream_error",1)]:
+            with self.subTest(kind=kind,budget=budget):
+                error = RetailerSearchError("Amazon", "upstream_http_503", page_kind=kind,http_status=503)
+                with patch.object(amazon,"scrape_search_page",side_effect=error) as scrape, patch.object(amazon,"sleep") as pause:
+                    with self.assertRaises(RetailerSearchError):
+                        amazon.search_amazon_page(self.driver(),"phone",deadline=monotonic()+budget)
+                self.assertEqual(scrape.call_count,1)
+                pause.assert_not_called()
 
     def test_captcha_and_confirmed_empty_page_remain_distinct(self):
         driver = self.driver("blocked_page", "captcha")

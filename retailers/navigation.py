@@ -22,20 +22,21 @@ DOCUMENT_PROBE = r"""
 const selector = arguments[0];
 const cards = document.querySelectorAll(selector).length;
 const n = performance.getEntriesByType('navigation')[0];
-const text = (document.body?.innerText || '').slice(0, 20000).toLowerCase();
+const text = ((document.title || '') + ' ' + (document.body?.innerText || '')).slice(0, 20000).replace(/\s+/g,' ').toLowerCase();
+const challengeForm = Boolean(document.querySelector?.('input#captchacharacters, form[action*="validateCaptcha"], img[src*="captcha"]'));
 let pageKind = 'unclassified';
-if (/captcha|robot check|enter the characters you see|verify you are human/.test(text)) pageKind = 'captcha';
+if (challengeForm || /captcha|robot check|not a robot|type the characters|enter the characters you see|verify you are human/.test(text)) pageKind = 'captcha';
 else if (/automated access|api-services-support@amazon/.test(text)) pageKind = 'automated_access';
 else if (/access denied|request blocked|permission to access/.test(text)) pageKind = 'access_denied';
 else if (/request could not be satisfied/.test(text)) pageKind = 'cdn_error';
-else if (/sorry.{0,12}something went wrong|service unavailable|503 service/.test(text)) pageKind = 'upstream_error';
+else if (/something went wrong|service unavailable|503 service/.test(text)) pageKind = 'upstream_error';
 else if (/no results for|no results found|did not match any products|0 results for/.test(text)) pageKind = 'empty';
 const httpStatus = n?.responseStatus || 0;
 let kind = null;
 if (httpStatus >= 400) kind = 'upstream_http_' + httpStatus;
 else if (['captcha','automated_access','access_denied'].includes(pageKind)) kind = 'blocked_page';
-else if (['upstream_error','cdn_error'].includes(pageKind)) kind = 'upstream_error';
 else if (cards >= 8 || (cards && document.readyState === 'complete')) kind = 'cards';
+else if (['upstream_error','cdn_error'].includes(pageKind)) kind = 'upstream_error';
 else if (pageKind === 'empty') kind = 'empty';
 if (kind === 'cards') pageKind = 'product_results';
 const host = location.hostname.replace(/^www\./, '');
@@ -43,7 +44,7 @@ return {kind, page_kind:pageKind, cards, http_status:httpStatus,
   host:['amazon.in','flipkart.com'].includes(host) ? host : 'other',
   search_path:location.pathname === '/s' || location.pathname === '/search',
   redirect_count:n?.redirectCount || 0, ready_state:document.readyState,
-  body_characters:document.body?.innerText.length || 0,
+  body_characters:document.body?.innerText.length || 0, challenge_form:challengeForm,
   dns_ms:Math.round((n?.domainLookupEnd || 0)-(n?.domainLookupStart || 0)),
   connection_ms:Math.round((n?.connectEnd || 0)-(n?.connectStart || 0)),
   response_ms:Math.round((n?.responseStart || 0)-(n?.requestStart || 0))};

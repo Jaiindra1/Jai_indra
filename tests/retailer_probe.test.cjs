@@ -24,6 +24,12 @@ test('a generic 503 does not imply an access restriction', () => {
     assert.equal(result.kind, 'upstream_http_503');
     assert.equal(result.page_kind, 'upstream_error');
 });
+test('multiline Amazon error pages are classified as upstream failures', () => {
+    assert.equal(probe('Sorry!\n\nSomething went wrong on our end. Please try again.',503).page_kind,'upstream_error');
+});
+test('Amazon robot wording is classified as a challenge', () => {
+    assert.equal(probe("Sorry, we just need to make sure you are not a robot.",503).page_kind,'captcha');
+});
 test('captcha is a failure even if the error page has HTTP 200', () => {
     const result = probe('Robot Check: enter the characters you see', 200);
     assert.equal(result.kind, 'blocked_page');
