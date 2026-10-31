@@ -94,6 +94,8 @@ def error_details(error):
         ("failed to download", "download_failed"),
         ("certificate verify failed", "network_certificate_failure"),
         ("chrome instance exited", "chrome_exited"),
+        ("chrome not reachable", "browser_not_reachable"),
+        ("cannot connect to chrome", "browser_not_reachable"),
         ("timed out", "timeout"),
         ("timeout", "timeout"),
     ]

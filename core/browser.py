@@ -165,7 +165,6 @@ def create_browser():
             options.add_argument("--disk-cache-size=16777216")
             options.add_argument("--no-zygote")
             options.add_argument("--single-process")
-            options.add_argument("--disable-dev-tools")
             options.add_argument("--disable-webgl")
         if browser_path:
             _validate_binaries(browser_path, driver_path)
@@ -187,7 +186,14 @@ def create_browser():
         diagnostics.event("browser_navigation_settings", page_load_strategy=strategy or "default",
                           page_load_timeout_seconds=page_load_timeout)
     except Exception as error:
+        # InitSession has no retailer content/query. Keep its short diagnostic
+        # message in private logs, never in the browser-health response.
+        summary = str(getattr(error, "msg", error)).split("Stacktrace:")[0]
+        summary = re.sub(r"https?://\S+", "[url]", summary)
+        summary = re.sub(r"(?:/[^\s:]+){2,}", "[path]", summary)
+        summary = re.sub(r"(?i)(password|token|secret|key)=\S+", r"\1=[redacted]", summary)
         diagnostics.event("browser_start_failed", seconds=round(monotonic() - started, 2),
+                          detail=summary[:500],
                           **diagnostics.error_details(error))
         # Manager may have downloaded a binary since the initial inventory.
         diagnostics.browser_environment(refresh=True)
