@@ -87,6 +87,42 @@ def collect_libraries():
             raise RuntimeError("Bundled library resolution failed: " + result.stdout)
 
 
+def extract_rpm_libraries(name, artifact, only=None):
+    rpm = download(name + ".rpm", artifact)
+    raw = subprocess.run(["rpm2cpio", str(rpm)], capture_output=True, check=True, timeout=20).stdout
+    offset = 0
+    found = set()
+    while offset + 110 <= len(raw):
+        header = raw[offset:offset+110]
+        if header[:6] not in {b"070701", b"070702"}:
+            raise RuntimeError("Invalid RPM CPIO payload.")
+        fields = [int(header[6+i*8:14+i*8], 16) for i in range(13)]
+        mode, size, namesize = fields[1], fields[6], fields[11]
+        offset += 110
+        member = raw[offset:offset+namesize-1].decode()
+        offset = (offset + namesize + 3) & ~3
+        payload = raw[offset:offset+size]
+        offset = (offset + size + 3) & ~3
+        if member == "TRAILER!!!":
+            break
+        filename = Path(member).name
+        if "/share/licenses/" in member and payload:
+            (BUNDLE / ("LICENSE." + name + "." + filename)).write_bytes(payload)
+        if "/lib64/" not in member or ".so" not in filename or only and filename not in only:
+            continue
+        destination = BUNDLE / "lib" / filename
+        if mode & 0o170000 == 0o120000:
+            target = payload.decode()
+            if Path(target).name != target:
+                raise RuntimeError("Unsafe library symlink.")
+            destination.symlink_to(target)
+        elif mode & 0o170000 == 0o100000:
+            destination.write_bytes(payload)
+        found.add(filename)
+    if only and not only.issubset(found):
+        raise RuntimeError("Official RPM lacks required browser libraries.")
+
+
 def prepare():
     package = download("chromium.tgz", LOCK["chromium_package"])
     driver = download("driver-" + LOCK["driver_version"] + ".zip", LOCK["chromedriver"])
@@ -125,28 +161,9 @@ def prepare():
                 if member.external_attr >> 16 & 0o111:
                     target.chmod(0o755)
         (BUNDLE / "browser-kind").write_text("chrome")
-        rpm = download("nss-smime.rpm", LOCK["nss_smime"])
-        raw = subprocess.run(["rpm2cpio", str(rpm)], capture_output=True, check=True, timeout=20).stdout
-        offset = 0
-        found = False
-        while offset + 110 <= len(raw):
-            header = raw[offset:offset+110]
-            if header[:6] not in {b"070701", b"070702"}:
-                raise RuntimeError("Invalid RPM CPIO payload.")
-            fields = [int(header[6+i*8:14+i*8], 16) for i in range(13)]
-            size, namesize = fields[6], fields[11]
-            offset += 110
-            name = raw[offset:offset+namesize-1].decode()
-            offset = (offset + namesize + 3) & ~3
-            payload = raw[offset:offset+size]
-            offset = (offset + size + 3) & ~3
-            if name == "TRAILER!!!":
-                break
-            if Path(name).name == "libsmime3.so":
-                (BUNDLE / "lib/libsmime3.so").write_bytes(payload)
-                found = True
-        if not found:
-            raise RuntimeError("Official NSS package did not contain libsmime3.so.")
+        extract_rpm_libraries("nss-smime", LOCK["nss_smime"], only={"libsmime3.so"})
+        for artifact in LOCK["graphics_libraries"]:
+            extract_rpm_libraries(artifact["name"], artifact)
     for name in ("chromium", "chromedriver"):
         assert_linux_x64(BUNDLE / name)
 
@@ -182,7 +199,7 @@ def main():
     size = sum(path.stat().st_size for path in BUNDLE.rglob("*") if path.is_file())
     print("BROWSER_LARGEST_FILES", json.dumps([(str(path.relative_to(BUNDLE)), path.stat().st_size) for path in sorted((p for p in BUNDLE.rglob("*") if p.is_file()), key=lambda p: p.stat().st_size, reverse=True)[:15]]), flush=True)
     if size > MAX_BROWSER_BYTES:
-        raise RuntimeError(f"Browser bundle is {size} bytes; exceeds 320 MiB browser budget.")
+        raise RuntimeError(f"Browser bundle is {size} bytes; exceeds {MAX_BROWSER_BYTES} byte browser budget.")
     manifest = {"platform": LOCK["platform"], "browser_version": LOCK["browser_version"],
                 "driver_version": LOCK["driver_version"], "bundle_bytes": size,
                 "linux_startup_verified": not args.prepare_only}

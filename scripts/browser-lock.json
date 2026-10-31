@@ -18,5 +18,17 @@
   "nss_smime": {
     "url": "https://cdn.amazonlinux.com/al2023/blobstore/d29491c7877c7031a2c2b2ce836e6dca9abb879e1589ffc8f6b4edccc346ebd4/nss-3.112.0-8.amzn2023.0.2.x86_64.rpm",
     "sha256": "d29491c7877c7031a2c2b2ce836e6dca9abb879e1589ffc8f6b4edccc346ebd4"
-  }
+  },
+  "graphics_libraries": [
+    {
+      "name": "mesa-libgbm",
+      "url": "https://cdn.amazonlinux.com/al2023/blobstore/8746264747801c015ba098f5687a807d96d2ca54e06e75894521812a057b4fd8/mesa-libgbm-22.3.3-1140.amzn2023.0.3.x86_64.rpm",
+      "sha256": "8746264747801c015ba098f5687a807d96d2ca54e06e75894521812a057b4fd8"
+    },
+    {
+      "name": "mesa-libglapi",
+      "url": "https://cdn.amazonlinux.com/al2023/blobstore/24be3643ca0a9c084f88fd4a93af439f0a14824916eb52a8021d0e4bc9f8526c/mesa-libglapi-22.3.3-1140.amzn2023.0.3.x86_64.rpm",
+      "sha256": "24be3643ca0a9c084f88fd4a93af439f0a14824916eb52a8021d0e4bc9f8526c"
+    }
+  ]
 }
