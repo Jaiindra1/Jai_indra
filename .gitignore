@@ -9,3 +9,6 @@ __pycache__/
 data/
 .vercel/
 .repo-publish/
+.browser-downloads/
+vendor/browser/
+verification-results.json

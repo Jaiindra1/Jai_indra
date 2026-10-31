@@ -1,4 +1,5 @@
 import re
+from threading import Lock
 
 from flask import Flask, render_template, request, jsonify
 
@@ -6,6 +7,7 @@ from services.search_service import search_products
 from services.feedback_service import send_feedback_email
 from retailers.outcomes import AllRetailersFailed
 from core import search_diagnostics as diagnostics
+from core.browser import browser_health
 
 
 app = Flask(
@@ -14,6 +16,26 @@ app = Flask(
     static_folder="public/static",
     static_url_path="/static",
 )
+_browser_health_lock = Lock()
+
+
+@app.get("/api/browser-health")
+def browser_health_endpoint():
+    # Do not launch concurrent health-check browsers within one function instance.
+    if not _browser_health_lock.acquire(blocking=False):
+        response = jsonify({"startup_success": False, "error_category": "check_in_progress"})
+        response.status_code = 503
+    else:
+        try:
+            with diagnostics.request_scope() as request_id:
+                result = browser_health()
+                response = jsonify(result)
+                response.status_code = 200 if result["startup_success"] else 503
+                response.headers["X-Search-Request-ID"] = request_id
+        finally:
+            _browser_health_lock.release()
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/health")

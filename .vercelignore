@@ -10,3 +10,5 @@ data/
 .vercel/
 *.log
 tests/
+.browser-downloads/
+verification-results.json

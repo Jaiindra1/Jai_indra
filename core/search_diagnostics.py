@@ -77,6 +77,8 @@ def error_details(error):
     reasons = [
         ("error while loading shared libraries", "missing_linux_library"),
         ("cannot open shared object file", "missing_linux_library"),
+        ("missing linux libraries", "missing_linux_library"),
+        ("build versions do not match", "browser_driver_version_mismatch"),
         ("only supports chrome version", "browser_driver_version_mismatch"),
         ("cannot find chrome binary", "browser_binary_missing"),
         ("no chrome binary", "browser_binary_missing"),
@@ -124,6 +126,13 @@ def browser_environment(refresh=False):
         drivers = [shutil.which("chromedriver")]
         configured_browser = os.getenv("CHROME_BINARY_PATH")
         configured_driver = os.getenv("CHROMEDRIVER_PATH")
+        # Runtime fallback paths are explicit too, even without dashboard env vars.
+        from core.browser import _explicit_paths, BUNDLE, _serverless
+        if _serverless():
+            configured_browser, configured_driver = _explicit_paths()
+        probe_env = os.environ.copy()
+        if _serverless():
+            probe_env["LD_LIBRARY_PATH"] = str(BUNDLE / "lib") + ":" + probe_env.get("LD_LIBRARY_PATH", "")
         # Manager cache availability is distinct from PATH availability.
         cache = Path(os.getenv("SE_CACHE_PATH") or Path.home() / ".cache" / "selenium")
         browser_name = "chrome.exe" if platform.system() == "Windows" else "chrome"
@@ -152,12 +161,12 @@ def browser_environment(refresh=False):
             if platform.system() == "Windows" and kind == "chrome":
                 event("binary_probe", binary=kind, available=True, version="checked_on_session_start")
                 continue
-            result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3)
+            result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3, env=probe_env)
             missing = sorted(set(re.findall(r"\b(lib[\w.+-]+\.so(?:\.[\d]+)*)", result.stderr)))
             event("binary_probe", binary=kind, exit_code=result.returncode,
                   version=version_number(result.stdout), mentioned_libraries=missing[:15])
             if platform.system() == "Linux" and shutil.which("ldd"):
-                result = subprocess.run(["ldd", binary], capture_output=True, text=True, timeout=3)
+                result = subprocess.run(["ldd", binary], capture_output=True, text=True, timeout=3, env=probe_env)
                 missing = re.findall(r"\b([\w.+-]+\.so(?:\.\d+)*)\s+=>\s+not found", result.stdout)
                 event("linux_libraries", binary=kind, exit_code=result.returncode,
                       missing_libraries=missing[:20])
