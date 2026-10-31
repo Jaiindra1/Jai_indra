@@ -153,7 +153,9 @@ def compare_product(product):
         result.update(status="busy", reason="browser_busy", message="A search is still finishing. Retry the comparison shortly.")
     except RetailerSearchError as error:
         result["reason"] = error.stage
-        diagnostics.event("comparison_retailer_failed", retailer=retailer, stage=error.stage)
+        result["message"] = error.public_message
+        diagnostics.event("comparison_retailer_failed", retailer=retailer, stage=error.stage,
+                          page_kind=error.page_kind, http_status=error.http_status)
     except Exception as error:
         result["reason"] = "comparison_failed"
         diagnostics.event("comparison_failed", retailer=retailer, **diagnostics.error_details(error))

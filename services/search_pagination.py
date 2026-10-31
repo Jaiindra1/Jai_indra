@@ -197,7 +197,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
                         state["pages"][retailer] = None
                         diagnostics.event("page_retailer_failed", retailer=retailer, page=page, stage=error.stage)
                         request_warnings.append({"retailer": retailer, "stage": error.stage,
-                                                 "message": retailer + " listings could not be loaded."})
+                                                 "message": error.public_message})
                 operation_stage = "browser_cleanup"
         except BrowserBusy:
             diagnostics.event("browser_capacity_busy", stage="browser_startup")

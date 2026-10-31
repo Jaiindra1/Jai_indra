@@ -15,13 +15,11 @@ import re
 from urllib.parse import quote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 
 from core.browser import browser_session
 from core import search_diagnostics as diagnostics
-from retailers.outcomes import RetailerSearchError, empty_result_or_raise, fail
+from retailers.outcomes import RetailerSearchError, fail
+from retailers.navigation import scrape_search_page
 
 
 logger = logging.getLogger(__name__)
@@ -35,14 +33,17 @@ PRODUCT_CARD_SELECTOR = (
 )
 
 
-def build_amazon_search_url(query: str) -> str:
+def build_amazon_search_url(query: str, page: int = 1) -> str:
     """Create a search URL from the user's product query."""
     query = (query or "").strip()
 
     if not query:
         raise ValueError("Search query cannot be empty.")
 
-    return SEARCH_URL.format(query=quote(query, safe=""))
+    if type(page) is not int or not 1 <= page <= 8:
+        raise ValueError("Invalid Amazon page.")
+    url = SEARCH_URL.format(query=quote(query, safe=""))
+    return url if page == 1 else url + f"&page={page}"
 
 
 def clean_text(value) -> str:
@@ -242,89 +243,45 @@ def parse_amazon_product_cards(
     return products
 
 
-def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = True) -> list[dict]:
-    """Return product dictionaries (or a confirmed empty list); raise on failure.
+def search_amazon_page(driver, query: str, *, page: int = 1, deadline: float, max_results: int = 40):
+    """Existing Amazon parser with one caller-owned browser and real page numbers.
 
-    raise_on_error is retained as a compatibility keyword; failures always raise.
+    Used by standalone search, live search/pagination and price comparison.
+    First-page navigation uses the same canonical URL as local search_amazon.
+    """
+    return scrape_search_page(driver, "Amazon", build_amazon_search_url(query, page), page,
+                              deadline, PRODUCT_CARD_SELECTOR, parse_amazon_product_cards,
+                              max_results=max_results)
+
+
+def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = True) -> list[dict]:
+    """Return real Amazon listings; failures always raise, as before.
+
+    Preserve the public interface and parser. Shared bounded navigation detects
+    error pages immediately instead of waiting 25 seconds for absent cards.
     """
     query = (query or "").strip()
-
     if not query:
         logger.warning("Amazon search skipped: query is empty.")
         return []
-
     try:
         max_results = max(1, min(int(max_results), 20))
     except (TypeError, ValueError):
         max_results = 10
-
-    search_url = build_amazon_search_url(query)
-
-    diagnostics.begin("Amazon")
     started = monotonic()
     stage = "browser_startup"
     try:
-        with browser_session() as driver:
-            logger.info("Retailer search started retailer=Amazon")
-            stage = "navigation"
-            navigation_started = monotonic()
-            diagnostics.event("navigation_started", retailer="Amazon", stage="navigation")
-            try:
-                driver.get(search_url)
-            except TimeoutException as error:
-                diagnostics.event("navigation_timeout", retailer="Amazon", stage="navigation",
-                                  seconds=round(monotonic() - navigation_started, 2),
-                                  **diagnostics.error_details(error))
-                raise  # Existing outcome handling classifies this as navigation_timeout.
-            except Exception as error:
-                diagnostics.event("navigation_failed", retailer="Amazon", stage="navigation",
-                                  seconds=round(monotonic() - navigation_started, 2),
-                                  **diagnostics.error_details(error))
-                raise
-            diagnostics.event("navigation_finished", retailer="Amazon", stage="navigation",
-                              seconds=round(monotonic() - navigation_started, 2))
-            diagnostics.page("Amazon", driver, "navigation_finished", PRODUCT_CARD_SELECTOR)
-
-            stage = "results_wait"
-            diagnostics.event("stage_started", retailer="Amazon", stage=stage)
-            try:
-                WebDriverWait(driver, 25).until(
-                    lambda current_driver: (
-                        current_driver.find_elements(
-                            By.CSS_SELECTOR, PRODUCT_CARD_SELECTOR
-                        )
-                        or current_driver.find_elements(
-                            By.CSS_SELECTOR, "h2 a[href]"
-                        )
-                    )
-                )
-            except TimeoutException:
-                diagnostics.page("Amazon", driver, "results_timeout", PRODUCT_CARD_SELECTOR)
-                return empty_result_or_raise("Amazon", driver, "results_timeout")
-
-            stage = "parsing"
-            diagnostics.event("stage_started", retailer="Amazon", stage=stage)
-            products = parse_amazon_product_cards(
-                html=driver.page_source,
-                max_results=max_results,
-                base_url=driver.current_url or AMAZON_URL,
-            )
-
-            diagnostics.page("Amazon", driver, "parsed", PRODUCT_CARD_SELECTOR, products=len(products))
-            if not products:
-                return empty_result_or_raise("Amazon", driver, "parsing_failure")
-            logger.info("Retailer search completed retailer=Amazon products=%d", len(products))
+        with browser_session(scraping=True) as driver:
+            stage = "retailer_processing"
+            result = search_amazon_page(driver, query, deadline=started + 14, max_results=max_results)
             stage = "browser_cleanup"
-            return products
-
+            logger.info("Retailer search completed retailer=Amazon products=%d", len(result.items))
+            return result.items
     except RetailerSearchError as error:
         diagnostics.event("retailer_failed", retailer="Amazon", stage=error.stage,
-                          seconds=round(monotonic() - started, 2), **diagnostics.error_details(error))
+                          page_kind=error.page_kind, http_status=error.http_status,
+                          seconds=round(monotonic() - started, 2))
         raise
-    except TimeoutException as error:
-        diagnostics.event("retailer_failed", retailer="Amazon", stage=stage,
-                          seconds=round(monotonic() - started, 2), **diagnostics.error_details(error))
-        fail("Amazon", "navigation_timeout" if stage == "navigation" else stage, error)
     except Exception as error:
         diagnostics.event("retailer_failed", retailer="Amazon", stage=stage,
                           seconds=round(monotonic() - started, 2), **diagnostics.error_details(error))

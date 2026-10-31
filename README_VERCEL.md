@@ -65,6 +65,48 @@ The deployment uses the single Mumbai (`bom1`) region, supported on Hobby,
 to reduce distance to Indian marketplaces. Region locality does not guarantee
 Amazon will accept requests from Vercel infrastructure.
 
+## Existing Amazon scraper and upstream failures
+
+`retailers/amazon.py` remains the Amazon implementation. Its six title, price,
+original-price, image, rating and card extraction functions are unchanged.
+`search_amazon()` and `search_amazon_page()` share one bounded navigation path.
+`retailers/pagination.py` delegates Amazon directly to that module, so initial
+Amazon requests, continuation/infinite scrolling and cross-retailer comparison
+all use the same parser and URL builder. Caller-owned browsers are reused.
+
+The first page uses the original working `/s?k=...` URL, with `page` added only
+for subsequent pages. Font blocking and eager navigation preserve image URLs.
+Flipkart remains preferred for the initial response, so Amazon does not delay
+its first real products. Error pages stop immediately, with no CAPTCHA solving,
+proxy rotation, identity spoofing, external product API or persistent storage.
+
+Safe `navigation_probe` logs classify product results, confirmed empty pages,
+CAPTCHA, automated-access notices, access denial, CDN errors and generic upstream
+errors. Logs record HTTP status, known marketplace host, search-path boolean,
+redirect count, DNS/connect/response timings and DOM size. They never contain
+response text, query strings, cookies, full URLs or credentials. A generic 503
+alone is not proof of an access restriction; only an explicit marker is labelled
+as one. Public search/comparison messages show the sanitized retailer failure.
+
+Local Windows verification returned 16 Amazon products on each of pages 1 and 2,
+23 Flipkart products on page 1 and 6 on page 2. Olive 8 GB/128 GB variant matching
+returned real prices on both retailers. Both Chrome 156 and Chrome 153 headless
+shell returned Amazon products on Windows. Vercel uses Linux Chromium
+153.0.8010.0 with compatible ChromeDriver 153.0.8010.52. These Windows checks do
+not prove Linux/Vercel access; before this change, deployed Amazon requests
+repeatedly returned HTTP 503. Production must be checked after every deployment.
+
+Explicit live verification (contacts the retailers):
+
+```powershell
+py scripts/verify_amazon_search.py --live-local --query "Samsung A56"
+py scripts/verify_amazon_search.py --base-url https://jai-indra.vercel.app --query "Samsung A56"
+```
+
+The scripts print measured counts, timings, pagination and comparison outcomes;
+reports stay in ignored `.browser-downloads/`. Unit tests use synthetic HTML
+only; production never returns these fixtures.
+
 ## Incremental search and infinite scrolling
 
 `POST /api/search` accepts JSON `{"query":"Samsung A56"}` and returns up to eight
@@ -133,7 +175,7 @@ Run the Python suite and frontend race-condition tests:
 
 ```powershell
 py -m unittest discover -s tests -v
-node --test tests/search_controller.test.cjs
+node --test tests/search_controller.test.cjs tests/retailer_probe.test.cjs
 py scripts/profile_pagination.py --base-url https://jai-indra.vercel.app --pages 6
 py scripts/profile_pagination.py --base-url https://jai-indra.vercel.app --mobile --pages 3
 ```

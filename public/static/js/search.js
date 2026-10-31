@@ -317,8 +317,7 @@ const pager = new window.SandhyaPager({
         displayProducts(fresh, append);
         if (!append && !fresh.length) resultsContainer.replaceChildren(createTextElement("p", data.message || "No matching products found."));
         const warnings = [...new Set((data.warnings || []).map(w =>
-            ["page_limit", "duplicate_page", "invalid_listings"].includes(w.stage)
-                ? w.message : w.retailer + " listings are unavailable right now."))];
+            typeof w.message === "string" && w.message ? w.message : w.retailer + " listings are unavailable right now."))];
         notices.classList.toggle("warning", warnings.length > 0);
         notices.textContent = warnings.length ? warnings.join(" ") : (data.pending_retailers || []).length ? "More retailers and listings load as you continue scrolling." : "";
         if (!append && fresh.length) resultsContainer.scrollIntoView({behavior: "smooth", block: "start"});

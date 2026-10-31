@@ -8,11 +8,21 @@ logger = logging.getLogger(__name__)
 
 
 class RetailerSearchError(RuntimeError):
-    def __init__(self, retailer, stage, error_type=""):
+    def __init__(self, retailer, stage, error_type="", *, page_kind=None, http_status=None):
         self.retailer = retailer
         self.stage = stage
         self.error_type = error_type
+        self.page_kind = page_kind
+        self.http_status = http_status
         super().__init__(f"{retailer} search failed during {stage}.")
+
+    @property
+    def public_message(self):
+        if self.page_kind in {"automated_access", "captcha", "access_denied"}:
+            return f"{self.retailer} is restricting automated access from this server. Check the retailer directly."
+        if self.http_status and self.http_status >= 400:
+            return f"{self.retailer} returned HTTP {self.http_status}. Its price could not be verified."
+        return f"{self.retailer} listings could not be loaded."
 
 
 class AllRetailersFailed(RuntimeError):

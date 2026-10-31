@@ -206,6 +206,9 @@ def create_browser(*, scraping=False):
     if scraping:
         strategy = "eager"
         options.add_experimental_option("browserStartupTimeout", 5000)
+    diagnostics.event("browser_launch_options", headless=True, serverless=_serverless(),
+                      page_load_strategy=strategy or "normal", fonts_blocked=scraping,
+                      single_process=_serverless(), no_sandbox=_serverless() or os.getenv("CHROME_NO_SANDBOX", "").lower() in {"1", "true", "yes"})
     if strategy is not None:
         options.page_load_strategy = strategy
     options.add_argument("--headless=new")
