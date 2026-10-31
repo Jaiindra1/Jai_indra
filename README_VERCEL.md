@@ -60,7 +60,9 @@ retailer's final product options and checkout price.
 Unavailable retailers retain their row, a Retry action and a direct retailer
 search link; no price is fabricated. Structured logs include `comparison_finished`,
 `comparison_retailer_failed`, execution region and safe navigation HTTP status
-and body length. No retailer response text or query is logged by those probes.
+and body length. No retailer response text or query is logged by those probes. A generic Amazon
+503 can also trigger one diagnostic-only, two-second direct Python HTTPS probe
+per worker to compare network outcomes; it never supplies product results.
 The deployment uses the single Mumbai (`bom1`) region, supported on Hobby,
 to reduce distance to Indian marketplaces. Region locality does not guarantee
 Amazon will accept requests from Vercel infrastructure.
@@ -78,8 +80,8 @@ The first page uses the original working `/s?k=...` URL, with `page` added only
 for subsequent pages. Font blocking and eager navigation preserve image URLs.
 Flipkart remains preferred for the initial response, so Amazon does not delay
 its first real products. Error pages are identified immediately. A recognized generic HTTP 503 gets at
-most one retry after 0.5 seconds, in the same browser and only when at least
-three seconds remain in the existing deadline. CAPTCHA, access-denied, automated-
+most one retry after two seconds, in the same browser and only when at least
+four seconds remain in the existing deadline. CAPTCHA, access-denied, automated-
 access and unknown pages are never retried. There is no CAPTCHA solving,
 proxy rotation, identity spoofing, external product API or persistent storage.
 
@@ -122,9 +124,18 @@ real products in `items` (`products` is retained as a compatibility alias), plus
 `retailer` field can be `Amazon` or `Flipkart`; Flipkart is preferred by default
 because production profiling showed its results were ready before Amazon's wait.
 
-The initial response does not wait for both retailers. Remaining products from
+The initial response does not wait for both retailers. After first paint, the
+frontend automatically requests the pending retailer with `priority=1`, without
+requiring a scroll. That continuation preserves the first retailer's buffered
+listings and appends real new-retailer products first. Requests remain serialized
+and are cancelled on query changes. A generic pending-retailer 503 may be tried
+once more after 2.5 seconds; its signed cursor bounds the attempts. CAPTCHA and
+access-restriction pages are not retried.
+
+Remaining products from
 the already scraped marketplace page are carried in the signed cursor; buffered
-requests start no browser. Once that buffer is exhausted, retailer-specific
+requests start no browser. Without the pending-priority flag, or after the pending check, once that buffer
+is exhausted, retailer-specific
 adapters alternate Amazon and Flipkart and advance their actual `page` parameters.
 They inspect next-page links and stop on exhausted or fully repeated pages.
 No successful page is fetched again during a forward cursor sequence.
@@ -158,7 +169,8 @@ than launching unbounded parallel browsers.
 Navigation and result waits share an absolute operation deadline (13 seconds for
 initial requests; 18 for continuation). Navigation is capped at eight seconds;
 card readiness is capped at four seconds for Flipkart and five for deferred
-Amazon requests. ChromeDriver startup is capped at five seconds for scraping.
+Amazon requests. Amazon navigation/retry receives up to nine seconds within
+the existing operation deadline. ChromeDriver startup is capped at five seconds for scraping.
 Cold archive extraction, network latency and process cleanup can still add time;
 these are engineering budgets, not a strict 15-second SLA. Logs report navigation,
 readiness, parsing, normalization, cleanup and response timings under request IDs.

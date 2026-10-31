@@ -258,11 +258,13 @@ def search_amazon_page(driver, query: str, *, page: int = 1, deadline: float, ma
         except RetailerSearchError as error:
             # One normal server-error retry in the SAME browser. Never retry
             # a challenge, access restriction, unknown error page or deadline.
-            if attempt or error.http_status != 503 or error.page_kind != "upstream_error" or deadline - monotonic() < 3:
+            if attempt or error.http_status != 503 or error.page_kind != "upstream_error" or deadline - monotonic() < 4:
                 raise
+            if deadline - monotonic() > 7:
+                diagnostics.compare_network("Amazon", url, PRODUCT_CARD_SELECTOR)
             diagnostics.event("retailer_retry", retailer="Amazon", page=page, attempt=2,
                               stage=error.stage, page_kind=error.page_kind)
-            sleep(0.5)
+            sleep(2)
 
 
 def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = True) -> list[dict]:

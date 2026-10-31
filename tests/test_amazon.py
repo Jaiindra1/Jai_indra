@@ -98,7 +98,7 @@ class AmazonTests(unittest.TestCase):
         with patch.object(amazon, "scrape_search_page", side_effect=[error, page]) as scrape, \
              patch.object(amazon, "sleep") as pause:
             self.assertIs(amazon.search_amazon_page(driver, "phone", deadline=deadline), page)
-        pause.assert_called_once_with(0.5)
+        pause.assert_called_once_with(2)
         self.assertEqual(scrape.call_count, 2)
         self.assertTrue(all(call.args[0] is driver and call.args[4] == deadline for call in scrape.call_args_list))
 

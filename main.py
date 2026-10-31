@@ -185,7 +185,10 @@ def _search_response_error(message, status):
 def api_search_more():
     with diagnostics.request_scope() as request_id:
         try:
-            response = _page_response(search_page(cursor=request.args.get("cursor", "")))
+            priority = request.args.get("priority", "0")
+            if priority not in {"0", "1"}:
+                raise InvalidCursor("Invalid pending-retailer request.")
+            response = _page_response(search_page(cursor=request.args.get("cursor", ""), prioritize_pending=priority == "1"))
         except InvalidCursor as error:
             response = app.make_response(_search_response_error(str(error), 400))
         except SearchUnavailable as error:

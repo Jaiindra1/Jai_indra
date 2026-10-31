@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE_SIZE = 8
 MAX_PAGES = 8
 MAX_SEEN = 640
+MAX_BUFFER = 72  # First retailer's remainder plus one pending retailer page.
 MAX_CURSOR = 14000
 CURSOR_AGE = 1800
 
@@ -79,11 +80,14 @@ def decode_cursor(token):
             isinstance(state["pages"], dict) and set(state["pages"]) == {"Amazon", "Flipkart"},
             all(page is None or type(page) is int and 1 <= page <= MAX_PAGES for page in state["pages"].values()),
             state["turn"] in state["pages"],
-            isinstance(state["buffer"], list) and len(state["buffer"]) <= 40,
+            isinstance(state["buffer"], list) and len(state["buffer"]) <= MAX_BUFFER,
             all(isinstance(item, dict) and isinstance(item.get("id"), str) for item in state["buffer"]),
             isinstance(state["seen"], list) and len(state["seen"]) <= MAX_SEEN,
             all(isinstance(key, str) and re.fullmatch(r"[a-f0-9]{20}", key) for key in state["seen"]),
             isinstance(state["warnings"], list) and len(state["warnings"]) <= 6,
+            isinstance(state.get("failures", {}), dict)
+            and set(state.get("failures", {})).issubset({"Amazon", "Flipkart"})
+            and all(type(n) is int and 0 <= n <= 2 for n in state.get("failures", {}).values()),
         ]
         if not all(checks):
             raise ValueError("Invalid cursor state.")
@@ -139,7 +143,7 @@ def normalize_listing(item, query, retailer):
     return normalized
 
 
-def search_page(query=None, cursor=None, first_retailer="Flipkart"):
+def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritize_pending=False):
     started = monotonic()
     if cursor is not None:
         state = decode_cursor(cursor)
@@ -152,6 +156,14 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
                  "turn": first_retailer, "buffer": [], "seen": [], "warnings": []}
     deadline = started + (13 if cursor is None else 18)
     request_warnings = []
+    pending = next((retailer for retailer, page in state["pages"].items() if page == 1), None) if cursor and prioritize_pending else None
+    carry = []
+    if pending:
+        # Check the other retailer after first paint, before the user must
+        # scroll through every buffered listing from the first retailer.
+        state["turn"] = pending
+        carry, state["buffer"] = state["buffer"], []
+    retry_delay = 0
     if not state["buffer"] and any(state["pages"].values()):
         operation_stage = "browser_startup"
         try:
@@ -159,7 +171,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
                 operation_stage = "retailer_processing"
                 # One process reused sequentially if the preferred retailer
                 # fails. Return as soon as one real marketplace page is ready.
-                for _ in range(2):
+                for _ in range(1 if pending else 2):
                     retailer = state["turn"]
                     if state["pages"][retailer] is None:
                         retailer = "Amazon" if retailer == "Flipkart" else "Flipkart"
@@ -168,9 +180,10 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
                         break
                     state["turn"] = "Amazon" if retailer == "Flipkart" else "Flipkart"
                     try:
-                        retailer_deadline = min(deadline, monotonic() + (6 if retailer == "Amazon" else 11))
+                        retailer_deadline = min(deadline, monotonic() + (9 if retailer == "Amazon" else 11))
                         result = scrape_page(driver, retailer, state["q"], page, retailer_deadline)
                         state["pages"][retailer] = result.next_page if result.has_next and page < MAX_PAGES else None
+                        state["warnings"] = [w for w in state["warnings"] if w.get("retailer") != retailer]
                         normalizing = monotonic()
                         seen = set(state["seen"])
                         valid_listings = 0
@@ -195,6 +208,11 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
                             break
                     except RetailerSearchError as error:
                         state["pages"][retailer] = None
+                        failures = state.setdefault("failures", {})
+                        failures[retailer] = min(2, failures.get(retailer, 0) + 1)
+                        if pending and error.http_status == 503 and error.page_kind == "upstream_error" and failures[retailer] < 2:
+                            state["pages"][retailer] = page
+                            retry_delay = 2500
                         diagnostics.event("page_retailer_failed", retailer=retailer, page=page, stage=error.stage)
                         request_warnings.append({"retailer": retailer, "stage": error.stage,
                                                  "message": error.public_message})
@@ -210,6 +228,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
                                      "warnings": [{"retailer": "Both retailers", "stage": operation_stage,
                                                    "message": "The search could not finish."}],
                                      "message": "Search is temporarily unavailable. Please retry."}) from None
+    state["buffer"].extend(carry)
     # Every buffered listing was deduplicated when its page was scraped. Keep
     # unsent products in the token; no worker cache or repeated navigation.
     items = state["buffer"][:PAGE_SIZE]
@@ -227,6 +246,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
     elapsed = round(monotonic() - started, 3)
     result = {"items": items, "products": items, "next_cursor": token, "has_more": has_more,
               "warnings": state["warnings"], "pending_retailers": [r for r, p in state["pages"].items() if p == 1],
+              "retry_delay_ms": retry_delay,
               "elapsed_ms": round(elapsed * 1000), "success": True,
               "message": "Products found successfully." if items else "Checking remaining retailers." if has_more else "No additional products found."}
     diagnostics.event("search_page_finished", stage="response", products=len(items),

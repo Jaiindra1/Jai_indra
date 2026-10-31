@@ -4,7 +4,7 @@ import os
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from core import search_diagnostics as diagnostics
 from main import app
@@ -13,6 +13,23 @@ from services.search_service import search_products
 
 
 class DiagnosticTests(unittest.TestCase):
+    def test_network_comparison_is_once_per_worker_and_does_not_log_response_text(self):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 503
+        response.url = "https://www.amazon.in/s?k=private-query"
+        response.read.return_value = b"<html><body>Sorry, something went wrong. private-response</body></html>"
+        with patch.dict(os.environ,{"SEARCH_DIAGNOSTICS":"1"}), \
+             patch.object(diagnostics,"_network_checked",False), \
+             patch.object(diagnostics,"urlopen",return_value=response) as fetch:
+            with self.assertLogs(diagnostics.logger,level="INFO") as logs:
+                diagnostics.compare_network("Amazon",response.url,"div[data-asin]")
+                diagnostics.compare_network("Amazon",response.url,"div[data-asin]")
+        self.assertEqual(fetch.call_count,1)
+        self.assertIn('"http_status": 503',logs.output[0])
+        self.assertNotIn("private-query",str(logs.output))
+        self.assertNotIn("private-response",str(logs.output))
+
     def test_vercel_default_and_explicit_opt_out(self):
         with patch.dict(os.environ, {"VERCEL": "1"}, clear=True):
             self.assertTrue(diagnostics.enabled())

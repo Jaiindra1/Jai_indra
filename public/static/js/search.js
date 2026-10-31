@@ -268,14 +268,14 @@ let lastApiMs = 0;
 let observer;
 window.__sandhyaMetrics = {pages: []};
 
-async function fetchPage({query, cursor, signal}) {
+async function fetchPage({query, cursor, signal, prioritizePending}) {
     const started = performance.now();
     const timeout = new AbortController();
     const abort = () => timeout.abort();
     signal.addEventListener("abort", abort, {once: true});
     const timer = setTimeout(abort, cursor ? 35000 : SEARCH_TIMEOUT);
     try {
-        const response = await fetch(cursor ? "/api/search/more?cursor=" + encodeURIComponent(cursor) : "/api/search", {
+        const response = await fetch(cursor ? "/api/search/more?cursor=" + encodeURIComponent(cursor) + (prioritizePending ? "&priority=1" : "") : "/api/search", {
             method: cursor ? "GET" : "POST",
             headers: {"Content-Type": "application/json"},
             body: cursor ? undefined : JSON.stringify({query}),
@@ -340,7 +340,7 @@ const pager = new window.SandhyaPager({
         else hideLoader();
         const loadingMore = state.loading && state.loaded;
         paginationStatus.classList.toggle("loading", loadingMore);
-        paginationStatus.textContent = state.error || (loadingMore ? "Loading more products..." : state.loaded && !state.hasMore ? "You have reached the end of this search." : "");
+        paginationStatus.textContent = state.error || (state.pendingRetailer ? "Checking the other retailer..." : loadingMore ? "Loading more products..." : state.loaded && !state.hasMore ? "You have reached the end of this search." : "");
         moreButton.hidden = !state.error && !state.hasMore;
         moreButton.disabled = state.loading;
         moreButton.textContent = state.error ? "Retry" : "Load more";
@@ -379,4 +379,4 @@ document.querySelectorAll(".product-card[data-detail-url]").forEach(card => {
     wireProductCard(card, url);
 });
 window.addEventListener("pagehide", () => pager.pause());
-window.addEventListener("pageshow", event => { if (event.persisted) { pager.emit(); hideLoader(); } });
+window.addEventListener("pageshow", event => { if (event.persisted) { hideLoader(); pager.resume(); } });

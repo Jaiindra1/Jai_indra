@@ -9,6 +9,29 @@ function deferred() {
 const page = (cursor = 'next', items = [{id: 'one'}]) => ({items, next_cursor: cursor, has_more: !!cursor});
 const pager = fetchPage => new SearchPager({fetchPage, onPage() {}, onStatus() {}});
 
+test('pending retailer is requested automatically after first products without scrolling', {timeout:1000}, async () => {
+    const finished = deferred();const calls=[],appended=[];
+    const p = new SearchPager({fetchPage: args => {
+        calls.push(args);
+        return Promise.resolve(calls.length===1 ? {...page('pending'),pending_retailers:['Amazon']} : page(null));
+    },onPage:(data,append)=>{appended.push(append);if(append)finished.resolve();},onStatus(){}});
+    await p.search('phone');
+    await p.more(); // Observer notification must not race the scheduled check.
+    await finished.promise;
+    assert.equal(calls.length,2);
+    assert.equal(calls[1].cursor,'pending');
+    assert.equal(calls[1].prioritizePending,true);
+    assert.deepEqual(appended,[false,true]);
+});
+
+test('query changes cancel scheduled pending-retailer work', async () => {
+    const calls=[];
+    const p=pager(args=>{calls.push(args.query);return Promise.resolve({...page('pending'),pending_retailers:['Amazon']});});
+    await p.search('old');p.cancel();
+    await new Promise(resolve=>setTimeout(resolve,80));
+    assert.deepEqual(calls,['old']);
+});
+
 test('concurrent observer notifications issue exactly one next-page request', async () => {
     const pending = deferred(); let calls = 0;
     const p = pager(() => ++calls === 1 ? Promise.resolve(page()) : pending.promise);

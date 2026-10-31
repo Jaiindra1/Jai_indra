@@ -11,6 +11,8 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
+from urllib.error import HTTPError
+from urllib.request import urlopen
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -18,6 +20,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger("sarathi.search_diagnostics")
 _runtime_logged = False
+_network_checked = False
 _trace = ContextVar("search_diagnostic_trace", default=None)
 _request_id = ContextVar("search_request_id", default=None)
 
@@ -109,6 +112,49 @@ def error_details(error):
 def version_number(value):
     match = re.search(r"\b\d+(?:\.\d+){1,3}\b", str(value))
     return match.group() if match else "unknown"
+
+
+def compare_network(retailer, url, selector):
+    """One diagnostic-only direct HTTPS request per worker; never product data.
+
+    Compare a generic browser 503 with the same server's default Python HTTPS
+    stack. No UA override, proxy, credentials, response text or full URL logged.
+    """
+    global _network_checked
+    if not enabled() or _network_checked:
+        return
+    if retailer != "Amazon" or urlsplit(url).hostname != "www.amazon.in":
+        return
+    _network_checked = True
+    started = monotonic()
+    try:
+        try:
+            response = urlopen(url, timeout=2)
+        except HTTPError as error:
+            response = error
+        with response:
+            status = response.status
+            soup = BeautifulSoup(response.read(512 * 1024), "html.parser")
+            for tag in soup(["script", "style"]):
+                tag.decompose()
+            text = " ".join(soup.get_text(" ", strip=True).lower().split())
+            kind = "unclassified"
+            if any(marker in text for marker in ("captcha", "not a robot", "robot check")):
+                kind = "captcha"
+            elif any(marker in text for marker in ("automated access", "access denied")):
+                kind = "access_restricted"
+            elif any(marker in text for marker in ("something went wrong", "service unavailable")):
+                kind = "upstream_error"
+            cards = len(soup.select(selector))
+            if status == 200 and cards:
+                kind = "product_results"
+            event("network_comparison", retailer=retailer, transport="python_https",
+                  http_status=status, page_kind=kind, cards=cards,
+                  same_host=urlsplit(response.url).hostname in {"amazon.in", "www.amazon.in"},
+                  seconds=round(monotonic() - started, 3))
+    except Exception as error:
+        event("network_comparison_failed", retailer=retailer, transport="python_https",
+              seconds=round(monotonic() - started, 3), **error_details(error))
 
 
 def browser_environment(refresh=False):

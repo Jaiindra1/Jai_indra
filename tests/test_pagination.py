@@ -58,6 +58,46 @@ class PaginationTests(unittest.TestCase):
         ids = [item["id"] for response in [first, second, third] for item in response["items"]]
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_pending_retailer_is_checked_before_buffer_when_requested(self):
+        with patch.object(pagination, "scrape_page", side_effect=[
+             RetailerPage(listings("Flipkart", count=24), True, 2),
+             RetailerPage(listings("Amazon", count=16), True, 2)]) as scrape:
+            first = pagination.search_page("phone")
+            second = pagination.search_page(cursor=first["next_cursor"], prioritize_pending=True)
+            third = pagination.search_page(cursor=second["next_cursor"])
+        self.assertTrue(all(i["retailer"] == "Amazon" for i in second["items"]))
+        self.assertEqual(scrape.call_count, 2)
+        self.assertEqual(scrape.call_args_list[1].args[1:4], ("Amazon", "phone", 1))
+        state = pagination.decode_cursor(third["next_cursor"])
+        self.assertEqual(len(state["buffer"]), 16)
+        self.assertTrue(all(i["retailer"] == "Flipkart" for i in state["buffer"]))
+
+    def test_pending_generic_503_retries_once_later_and_keeps_flipkart_buffer(self):
+        error = RetailerSearchError("Amazon", "upstream_http_503", page_kind="upstream_error", http_status=503)
+        with patch.object(pagination, "scrape_page", side_effect=[
+             RetailerPage(listings("Flipkart", count=24), False), error,
+             RetailerPage(listings("Amazon", count=8), False)]):
+            first = pagination.search_page("phone")
+            second = pagination.search_page(cursor=first["next_cursor"], prioritize_pending=True)
+            third = pagination.search_page(cursor=second["next_cursor"], prioritize_pending=True)
+        self.assertEqual(second["pending_retailers"], ["Amazon"])
+        self.assertEqual(second["retry_delay_ms"], 2500)
+        self.assertEqual(len(second["items"]), 8)
+        self.assertTrue(all(i["retailer"] == "Flipkart" for i in second["items"]))
+        self.assertEqual(third["warnings"], [])
+        self.assertTrue(all(i["retailer"] == "Amazon" for i in third["items"]))
+
+    def test_pending_access_restriction_stops_and_generic_errors_are_bounded(self):
+        for kind in ("captcha", "upstream_error"):
+            error = RetailerSearchError("Amazon", "upstream_http_503", page_kind=kind, http_status=503)
+            with patch.object(pagination, "scrape_page", side_effect=[RetailerPage(listings("Flipkart",count=24),False),error,error]) as scrape:
+                result = pagination.search_page("phone")
+                result = pagination.search_page(cursor=result["next_cursor"],prioritize_pending=True)
+                if result["pending_retailers"]:
+                    result = pagination.search_page(cursor=result["next_cursor"],prioritize_pending=True)
+            self.assertEqual(result["pending_retailers"], [])
+            self.assertLessEqual(scrape.call_count, 3)
+
     def test_real_page_numbers_advance_and_retailers_alternate(self):
         responses = [RetailerPage(listings("Flipkart", count=8), True, 2),
                      RetailerPage(listings("Amazon", count=8), False),
