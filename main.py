@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, jsonify
 from services.search_service import search_products
 from services.feedback_service import send_feedback_email
 from retailers.outcomes import AllRetailersFailed
+from core import search_diagnostics as diagnostics
 
 
 app = Flask(
@@ -76,6 +77,14 @@ def home():
 # NEW: AJAX search endpoint.
 @app.route("/api/search", methods=["POST"])
 def api_search():
+    with diagnostics.request_scope() as request_id:
+        response = app.make_response(_api_search())
+        response.headers["X-Search-Request-ID"] = request_id
+        diagnostics.event("api_response", stage="response", status=response.status_code)
+        return response
+
+
+def _api_search():
 
     # Read the search query from the JSON request.
     data = request.get_json(silent=True) or {}
@@ -93,7 +102,9 @@ def api_search():
 
     try:
         # Reuse the existing product-search service.
+        diagnostics.event("search_started", stage="retailer_search")
         products = search_products(query, max_results=20)
+        diagnostics.event("search_finished", stage="response", products=len(products))
 
         return jsonify({
             "success": True,
@@ -106,6 +117,7 @@ def api_search():
         }), 200
 
     except AllRetailersFailed:
+        diagnostics.event("search_failed", stage="retailer_search", reason="all_retailers_failed", status=502)
         app.logger.error("AJAX product search failed: all retailers unavailable")
         return jsonify({
             "success": False,
@@ -113,7 +125,8 @@ def api_search():
             "products": [],
         }), 502
 
-    except Exception:
+    except Exception as error:
+        diagnostics.event("search_failed", stage="processing", status=500, **diagnostics.error_details(error))
         app.logger.exception("AJAX product search failed")
 
         return jsonify({

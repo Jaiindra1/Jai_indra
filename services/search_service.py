@@ -1,4 +1,6 @@
 import logging
+from time import monotonic
+from core import search_diagnostics as diagnostics
 
 from models.product import Product
 from retailers.flipkart import search_flipkart
@@ -98,18 +100,26 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
         ("Flipkart", search_flipkart),
         ("Amazon", search_amazon),
     ]:
+        retailer_started = monotonic()
+        diagnostics.event("retailer_dispatch", retailer=retailer_name, stage="browser_startup")
         try:
             retailer_results[retailer_name] = search_function(
                 query=query,
                 max_results=max_results,
                 raise_on_error=True,
             )
+            diagnostics.event("retailer_completed", retailer=retailer_name,
+                              products=len(retailer_results[retailer_name]),
+                              seconds=round(monotonic() - retailer_started, 3))
         except Exception as error:
             stage = error.stage if isinstance(error, RetailerSearchError) else "unexpected_failure"
             logger.error("Retailer unavailable retailer=%s stage=%s error_type=%s",
                          retailer_name, stage, type(error).__name__)
             retailer_results[retailer_name] = []
             retailer_errors.append(retailer_name)
+            diagnostics.event("retailer_unavailable", retailer=retailer_name, stage=stage,
+                              seconds=round(monotonic() - retailer_started, 3),
+                              **diagnostics.error_details(error))
 
     # Report an error only if both retailer searches raised exceptions.
     if len(retailer_errors) == 2:
@@ -119,6 +129,8 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
         )
 
     products = []
+    diagnostics.event("processing_started", stage="normalization",
+                      input_products=sum(len(items) for items in retailer_results.values()))
     seen_urls = set()
 
     # Process both retailers using the same Product model.
@@ -171,4 +183,5 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
 
             products.append(product.to_dict())
 
+    diagnostics.event("processing_finished", stage="normalization", products=len(products))
     return SearchResults(products, {"enabled": False, "mode": "live_only"})

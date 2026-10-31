@@ -630,6 +630,7 @@ def search_flipkart(
             )
 
             stage = "results_wait"
+            diagnostics.event("stage_started", retailer="Flipkart", stage=stage)
 
             try:
 
@@ -691,6 +692,7 @@ def search_flipkart(
                 )
 
             stage = "parsing"
+            diagnostics.event("stage_started", retailer="Flipkart", stage=stage)
 
             html = driver.page_source
 

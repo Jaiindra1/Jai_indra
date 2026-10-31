@@ -286,6 +286,7 @@ def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = T
             diagnostics.page("Amazon", driver, "navigation_finished", PRODUCT_CARD_SELECTOR)
 
             stage = "results_wait"
+            diagnostics.event("stage_started", retailer="Amazon", stage=stage)
             try:
                 WebDriverWait(driver, 25).until(
                     lambda current_driver: (
@@ -302,6 +303,7 @@ def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = T
                 return empty_result_or_raise("Amazon", driver, "results_timeout")
 
             stage = "parsing"
+            diagnostics.event("stage_started", retailer="Amazon", stage=stage)
             products = parse_amazon_product_cards(
                 html=driver.page_source,
                 max_results=max_results,

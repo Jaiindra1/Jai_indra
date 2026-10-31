@@ -1,4 +1,4 @@
-"""Opt-in production diagnostics. Never log credentials or retailer page text."""
+"""Search diagnostics, on by default on Vercel. Never log credentials or page text."""
 import json
 import logging
 import os
@@ -6,8 +6,11 @@ import platform
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -16,6 +19,23 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger("sarathi.search_diagnostics")
 _runtime_logged = False
 _trace = ContextVar("search_diagnostic_trace", default=None)
+_request_id = ContextVar("search_request_id", default=None)
+
+
+@contextmanager
+def request_scope():
+    """Correlate all retailer events without logging the search query."""
+    request_id = uuid4().hex[:16]
+    request_token = _request_id.set(request_id)
+    trace_token = _trace.set(None)
+    started = monotonic()
+    event("request_started", stage="validation")
+    try:
+        yield request_id
+    finally:
+        event("request_finished", seconds=round(monotonic() - started, 3))
+        _trace.reset(trace_token)
+        _request_id.reset(request_token)
 
 
 def begin(retailer):
@@ -25,7 +45,10 @@ def begin(retailer):
 
 
 def enabled():
-    return os.getenv("SEARCH_DIAGNOSTICS", "").lower() in {"1", "true", "yes"}
+    value = os.getenv("SEARCH_DIAGNOSTICS")
+    if value is None:
+        return os.getenv("VERCEL", "").lower() in {"1", "true"}
+    return value.lower() in {"1", "true", "yes"}
 
 
 def event(name, **fields):
@@ -39,7 +62,10 @@ def event(name, **fields):
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
             logger.propagate = False
-        logger.info(json.dumps({"event": name, "pid": os.getpid(), "trace": _trace.get(), **fields}, sort_keys=True))
+        logger.info(json.dumps({"event": name, "pid": os.getpid(),
+                               "timestamp": datetime.now(timezone.utc).isoformat(),
+                               "request_id": _request_id.get(), "trace": _trace.get(),
+                               **fields}, sort_keys=True))
     except Exception:
         pass  # Observability must never change a search outcome.
 
@@ -54,6 +80,9 @@ def error_details(error):
         ("only supports chrome version", "browser_driver_version_mismatch"),
         ("cannot find chrome binary", "browser_binary_missing"),
         ("no chrome binary", "browser_binary_missing"),
+        ("configured chrome executable is missing", "browser_binary_missing"),
+        ("configured chromedriver executable is missing", "driver_binary_missing"),
+        ("configure chrome_binary_path and chromedriver_path together", "incomplete_binary_configuration"),
         ("unable to obtain driver", "driver_discovery_failed"),
         ("devtoolsactiveport", "chrome_startup_failed"),
         ("no usable sandbox", "sandbox_unavailable"),
@@ -83,20 +112,33 @@ def browser_environment(refresh=False):
     _runtime_logged = True
     try:
         from importlib.metadata import version
-        browsers = [shutil.which(name) for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")]
+        browsers = [shutil.which(name) for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")]
+        browser_on_path = any(browsers)
+        if platform.system() == "Windows":
+            for variable in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+                base = os.getenv(variable)
+                if base:
+                    candidate = Path(base) / "Google/Chrome/Application/chrome.exe"
+                    if candidate.is_file():
+                        browsers.append(str(candidate))
         drivers = [shutil.which("chromedriver")]
         configured_browser = os.getenv("CHROME_BINARY_PATH")
         configured_driver = os.getenv("CHROMEDRIVER_PATH")
         # Manager cache availability is distinct from PATH availability.
         cache = Path(os.getenv("SE_CACHE_PATH") or Path.home() / ".cache" / "selenium")
-        cached_chrome = list(cache.glob("chrome/**/chrome"))[:3] if cache.is_dir() else []
-        cached_driver = list(cache.glob("chromedriver/**/chromedriver"))[:3] if cache.is_dir() else []
+        browser_name = "chrome.exe" if platform.system() == "Windows" else "chrome"
+        driver_name = "chromedriver.exe" if platform.system() == "Windows" else "chromedriver"
+        cached_chrome = list(cache.glob(f"chrome/**/{browser_name}"))[:3] if cache.is_dir() else []
+        cached_driver = list(cache.glob(f"chromedriver/**/{driver_name}"))[:3] if cache.is_dir() else []
         event("browser_environment", platform=platform.system(), architecture=platform.machine(),
-              selenium_version=version("selenium"), browser_on_path=any(browsers),
+              selenium_version=version("selenium"), browser_on_path=browser_on_path,
+              browser_installed=any(browsers),
               driver_on_path=any(drivers), chrome_in_manager_cache=bool(cached_chrome),
               driver_in_manager_cache=bool(cached_driver),
               explicit_browser_configured=bool(configured_browser),
               explicit_driver_configured=bool(configured_driver),
+              explicit_browser_exists=Path(os.path.expandvars(os.path.expanduser(configured_browser))).is_file() if configured_browser else False,
+              explicit_driver_exists=Path(os.path.expandvars(os.path.expanduser(configured_driver))).is_file() if configured_driver else False,
               running_as_root=(os.geteuid() == 0) if hasattr(os, "geteuid") else False)
         if platform.system() == "Linux" and Path("/dev/shm").is_dir():
             space = shutil.disk_usage("/dev/shm")
@@ -105,6 +147,10 @@ def browser_environment(refresh=False):
                                  ("chromedriver", [configured_driver] + drivers + cached_driver)]:
             binary = next((str(p) for p in candidates if p and Path(p).is_file()), None)
             if not binary:
+                event("binary_unavailable", binary=kind, stage="browser_startup")
+                continue
+            if platform.system() == "Windows" and kind == "chrome":
+                event("binary_probe", binary=kind, available=True, version="checked_on_session_start")
                 continue
             result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3)
             missing = sorted(set(re.findall(r"\b(lib[\w.+-]+\.so(?:\.[\d]+)*)", result.stderr)))

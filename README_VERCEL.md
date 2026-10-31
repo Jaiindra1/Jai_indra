@@ -55,6 +55,34 @@ contact retailers, send email, or access storage.
 
 ## Runtime limits
 
+### Diagnose a 502
+
+Structured `[search-diagnostics]` logs are enabled automatically when `VERCEL=1`.
+Set `SEARCH_DIAGNOSTICS=1` locally to enable them, or `0` to explicitly disable.
+Every search response includes `X-Search-Request-ID`; match that to `request_id`
+in runtime logs. Queries, credentials, raw exception messages, and retailer page
+text are not emitted by these diagnostic events.
+
+The API returns 502 when both retailer searches fail. A routing check or a healthy
+`/health` response does not establish that browser startup or scraping works.
+
+| Log event/stage | What to check |
+| --- | --- |
+| `browser_environment`, `binary_unavailable` | Chrome/ChromeDriver PATH, Manager cache, and explicit path availability |
+| `binary_probe`, `linux_libraries` | Executable versions and missing shared libraries |
+| `browser_start_failed` | Classified reason: driver discovery, missing browser, version mismatch, sandbox, etc. |
+| `navigation_started` / `navigation_failed` | Retailer connectivity or navigation timeout |
+| `stage_started` with `results_wait` | Waiting for retailer result elements |
+| `retailer_page`, `parsing` | CAPTCHA/block classification, card/link counts, parsed product counts |
+| `browser_cleanup_failed` | Driver quit failed |
+| `processing_started` / `processing_finished` | Product normalization before JSON response |
+| `retailer_unavailable`, `search_failed`, `api_response` | Failed retailer stage and final HTTP status |
+
+If a request times out, the last stage event without a completion identifies where
+execution stopped. Logs diagnose availability; they do not install Chrome or
+ChromeDriver. Production availability must be checked in production logs, not
+inferred from a successful local Windows browser session.
+
 Chrome/ChromeDriver are not bundled. Live Selenium searches on Vercel still require
 compatible browser binaries and may encounter retailer bot protection or function
 timeouts. The requested duration is 60 seconds. Routing tests do not verify live
