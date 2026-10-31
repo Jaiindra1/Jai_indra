@@ -23,8 +23,3 @@ FEEDBACK_RECIPIENT = os.getenv("FEEDBACK_RECIPIENT")
 # SMTP connection timeout in seconds.
 MAIL_TIMEOUT = 15
 
-# One local database. Relative paths are resolved against the project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_database_path = Path(os.getenv("SQLITE_DATABASE_PATH", "data/products.sqlite3")).expanduser()
-SQLITE_DATABASE_PATH = (_database_path if _database_path.is_absolute()
-                        else PROJECT_ROOT / _database_path).resolve()

@@ -5,8 +5,8 @@ from retailers.flipkart import search_flipkart
 from retailers.amazon import search_amazon
 from retailers.outcomes import AllRetailersFailed, RetailerSearchError
 from services.specification_extractor import extract_highlights
-from services.product_repository import product_identity
-from services.price_tracking_service import track_search
+from urllib.parse import urlsplit, urlunsplit
+
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,6 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
 
     # Report an error only if both retailer searches raised exceptions.
     if len(retailer_errors) == 2:
-        track_search(query, [], retailer_errors)
         raise AllRetailersFailed(
             "Both Flipkart and Amazon searches failed. "
             "Check the application logs for details."
@@ -134,12 +133,11 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
             # Avoid showing the same URL more than once.
             product_url = item.get("url")
             if product_url:
-                try:
-                    normalized_url = product_identity({
-                        "retailer": item.get("retailer") or retailer_name, "url": product_url,
-                    })[0]
-                except ValueError:
-                    normalized_url = (retailer_name, product_url)
+                # URL-only deduplication: no database identity or persistence.
+                parsed = urlsplit(product_url)
+                normalized_url = (retailer_name.lower(), urlunsplit((
+                    parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), "", ""
+                )))
 
                 if normalized_url in seen_urls:
                     continue
@@ -173,4 +171,4 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
 
             products.append(product.to_dict())
 
-    return SearchResults(products, track_search(query, products, retailer_errors))
+    return SearchResults(products, {"enabled": False, "mode": "live_only"})

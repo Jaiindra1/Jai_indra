@@ -47,9 +47,6 @@ def home():
 
                 if not products:
                     message = "No products found. Try another search."
-                warning = getattr(products, "persistence", {}).get("warning", "")
-                if warning:
-                    message = f"{message} {warning}".strip()
 
             except Exception:
                 app.logger.exception("Product search failed")
@@ -93,7 +90,6 @@ def api_search():
                 else "No matching products found. Try another search."
             ),
             "products": products,
-            "persistence": getattr(products, "persistence", {}),
         }), 200
 
     except AllRetailersFailed:
