@@ -15,11 +15,13 @@ import re
 from urllib.parse import quote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.by import By
 
 from core.browser import browser_session
 from core import search_diagnostics as diagnostics
 from retailers.outcomes import RetailerSearchError, fail
-from retailers.navigation import scrape_search_page
+from retailers.navigation import scrape_search_page, DOCUMENT_PROBE
 
 
 logger = logging.getLogger(__name__)
@@ -243,6 +245,35 @@ def parse_amazon_product_cards(
     return products
 
 
+def _search_from_homepage(driver, query, deadline):
+    """Try Amazon's normal homepage/form session once, without bypassing a challenge."""
+    if getattr(driver, "_sandhya_amazon_home_checked", False) is True or deadline - monotonic() < 4:
+        return False
+    driver._sandhya_amazon_home_checked = True
+    driver.set_page_load_timeout(min(3, deadline - monotonic() - 0.5))
+    try:
+        driver.get(AMAZON_URL)
+    except TimeoutException:
+        driver.execute_cdp_cmd("Page.stopLoading", {})
+    probe = driver.execute_script(DOCUMENT_PROBE, PRODUCT_CARD_SELECTOR)
+    boxes = driver.find_elements(By.ID, "twotabsearchtextbox")
+    buttons = driver.find_elements(By.ID, "nav-search-submit-button")
+    diagnostics.event("amazon_home_session", retailer="Amazon", **probe,
+                      search_form_available=bool(boxes and buttons), cookie_count=len(driver.get_cookies()))
+    if probe["page_kind"] in {"captcha", "automated_access", "access_denied"}:
+        raise RetailerSearchError("Amazon", "blocked_page", page_kind=probe["page_kind"], http_status=probe["http_status"])
+    if probe["http_status"] != 200 or not boxes or not buttons or deadline - monotonic() < 2:
+        return False
+    boxes[0].clear()
+    boxes[0].send_keys(query)
+    driver.set_page_load_timeout(max(0.3, min(8, deadline - monotonic() - 0.5)))
+    try:
+        buttons[0].click()
+    except TimeoutException:
+        driver.execute_cdp_cmd("Page.stopLoading", {})
+    return True
+
+
 def search_amazon_page(driver, query: str, *, page: int = 1, deadline: float, max_results: int = 40):
     """Existing Amazon parser with one caller-owned browser and real page numbers.
 
@@ -250,11 +281,12 @@ def search_amazon_page(driver, query: str, *, page: int = 1, deadline: float, ma
     First-page navigation uses the same canonical URL as local search_amazon.
     """
     url = build_amazon_search_url(query, page)
+    navigate = True
     for attempt in range(2):
         try:
             return scrape_search_page(driver, "Amazon", url, page, deadline,
                                       PRODUCT_CARD_SELECTOR, parse_amazon_product_cards,
-                                      max_results=max_results)
+                                      max_results=max_results, navigate=navigate)
         except RetailerSearchError as error:
             # One normal server-error retry in the SAME browser. Never retry
             # a challenge, access restriction, unknown error page or deadline.
@@ -264,7 +296,18 @@ def search_amazon_page(driver, query: str, *, page: int = 1, deadline: float, ma
                 diagnostics.compare_network("Amazon", url, PRODUCT_CARD_SELECTOR)
             diagnostics.event("retailer_retry", retailer="Amazon", page=page, attempt=2,
                               stage=error.stage, page_kind=error.page_kind)
-            sleep(2)
+            submitted = False
+            if page == 1:
+                try:
+                    submitted = _search_from_homepage(driver, query, deadline)
+                except RetailerSearchError:
+                    raise
+                except Exception as session_error:
+                    diagnostics.event("amazon_home_session_failed", **diagnostics.error_details(session_error))
+            if submitted:
+                navigate = False
+            else:
+                sleep(2)
 
 
 def search_amazon(query: str, max_results: int = 10, *, raise_on_error: bool = True) -> list[dict]:

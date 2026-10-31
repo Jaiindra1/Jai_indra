@@ -96,11 +96,33 @@ class AmazonTests(unittest.TestCase):
         page = RetailerPage([{"name": "real listing"}], False)
         deadline = monotonic()+10
         with patch.object(amazon, "scrape_search_page", side_effect=[error, page]) as scrape, \
+             patch.object(amazon, "_search_from_homepage", return_value=False), \
              patch.object(amazon, "sleep") as pause:
             self.assertIs(amazon.search_amazon_page(driver, "phone", deadline=deadline), page)
         pause.assert_called_once_with(2)
         self.assertEqual(scrape.call_count, 2)
         self.assertTrue(all(call.args[0] is driver and call.args[4] == deadline for call in scrape.call_args_list))
+
+    def test_normal_homepage_form_uses_same_browser_without_duplicate_navigation(self):
+        driver = self.driver()
+        error = RetailerSearchError("Amazon", "upstream_http_503", page_kind="upstream_error", http_status=503)
+        page = RetailerPage([{"name":"real listing"}],False)
+        with patch.object(amazon,"scrape_search_page",side_effect=[error,page]) as scrape, \
+             patch.object(amazon,"_search_from_homepage",return_value=True) as home, \
+             patch.object(amazon,"sleep") as pause:
+            result=amazon.search_amazon_page(driver,"phone",deadline=monotonic()+10)
+        self.assertIs(result,page)
+        self.assertIs(home.call_args.args[0],driver)
+        self.assertEqual(scrape.call_args_list[1].kwargs['navigate'],False)
+        pause.assert_not_called()
+
+    def test_homepage_challenge_is_never_submitted(self):
+        driver=self.driver('upstream_http_503','captcha',503)
+        driver._sandhya_amazon_home_checked=False
+        with self.assertRaises(RetailerSearchError):
+            amazon._search_from_homepage(driver,'phone',monotonic()+10)
+        for button in driver.find_elements.return_value:
+            button.click.assert_not_called()
 
     def test_access_restrictions_unknown_errors_and_deadlines_are_not_retried(self):
         for kind, budget in [("captcha",10),("automated_access",10),("unclassified",10),("upstream_error",1)]:

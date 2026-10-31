@@ -81,8 +81,11 @@ for subsequent pages. Font blocking and eager navigation preserve image URLs.
 Flipkart remains preferred for the initial response, so Amazon does not delay
 its first real products. Error pages are identified immediately. A recognized generic HTTP 503 gets at
 most one retry after two seconds, in the same browser and only when at least
-four seconds remain in the existing deadline. CAPTCHA, access-denied, automated-
-access and unknown pages are never retried. There is no CAPTCHA solving,
+four seconds remain in the existing deadline. For a first-page generic error, the retry may instead open Amazon's normal
+homepage and submit its search form in the same browser. This establishes only
+the site's own ordinary session cookies; no cookies are imported or overridden.
+The form result is parsed without navigating to the search page again.
+CAPTCHA, access-denied, automated-access and unknown pages are never retried. There is no CAPTCHA solving,
 proxy rotation, identity spoofing, external product API or persistent storage.
 
 Safe `navigation_probe` logs classify product results, confirmed empty pages,

@@ -65,7 +65,7 @@ def next_page_number(soup, retailer, page):
     return None
 
 
-def scrape_search_page(driver, retailer, url, page, deadline, selector, parser, max_results=40):
+def scrape_search_page(driver, retailer, url, page, deadline, selector, parser, max_results=40, *, navigate=True):
     """One navigation. Absolute deadline includes navigation, waits and parsing."""
     stage = "navigation"
     started = monotonic()
@@ -78,12 +78,14 @@ def scrape_search_page(driver, retailer, url, page, deadline, selector, parser, 
         driver.set_page_load_timeout(max(0.3, min(8, remaining - 0.6)))
         navigated = monotonic()
         try:
-            driver.get(url)
+            if navigate:
+                driver.get(url)
         except TimeoutException:
             # A ready result DOM can still be useful when an ancillary request
             # stalls. Stop loading and apply the same explicit card checks.
             driver.execute_cdp_cmd("Page.stopLoading", {})
         diagnostics.event("navigation_finished", retailer=retailer, page=page,
+                          navigation_method="direct" if navigate else "search_form",
                           seconds=round(monotonic() - navigated, 3))
         probe = driver.execute_script(DOCUMENT_PROBE, selector)
         diagnostics.event("navigation_probe", retailer=retailer, page=page, **probe)
