@@ -180,6 +180,7 @@ def main():
     if not args.prepare_only:
         verify()
     size = sum(path.stat().st_size for path in BUNDLE.rglob("*") if path.is_file())
+    print("BROWSER_LARGEST_FILES", json.dumps([(str(path.relative_to(BUNDLE)), path.stat().st_size) for path in sorted((p for p in BUNDLE.rglob("*") if p.is_file()), key=lambda p: p.stat().st_size, reverse=True)[:15]]), flush=True)
     if size > MAX_BROWSER_BYTES:
         raise RuntimeError(f"Browser bundle is {size} bytes; exceeds 320 MiB browser budget.")
     manifest = {"platform": LOCK["platform"], "browser_version": LOCK["browser_version"],
