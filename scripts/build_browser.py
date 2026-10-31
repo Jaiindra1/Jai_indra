@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "vendor/browser"
 CACHE = ROOT / ".browser-downloads"
 LOCK = json.loads((Path(__file__).with_name("browser-lock.json")).read_text())
-# Leave 180 MiB for Python dependencies/framework/runtime overhead.
+# Expanded budget leaves /tmp headroom; the compressed archive is the function payload.
 MAX_BROWSER_BYTES = (440 if LOCK.get("browser_kind") == "chrome" else 320) * 1024 * 1024
 SYSTEM_LIBRARIES = re.compile(r"^(?:ld-linux|lib(?:c|m|dl|pthread|rt|resolv|util)\.so)")
 

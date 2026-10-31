@@ -99,8 +99,8 @@ as one. Public search/comparison messages show the sanitized retailer failure.
 Local Windows verification returned 16 Amazon products on each of pages 1 and 2,
 23 Flipkart products on page 1 and 6 on page 2. Olive 8 GB/128 GB variant matching
 returned real prices on both retailers. Both Chrome 156 and Chrome 153 headless
-shell returned Amazon products on Windows. Vercel uses Linux Chromium
-153.0.8010.0 with compatible ChromeDriver 153.0.8010.52. These Windows checks do
+shell returned Amazon products on Windows. Vercel packages official Linux Chrome
+156.0.8078.80 with matching ChromeDriver 156.0.8078.80. These Windows checks do
 not prove Linux/Vercel access; before this change, deployed Amazon requests
 repeatedly returned HTTP 503. An initial production check of this change returned eight real Amazon products
 in 4.75 seconds, but other searches and comparison still returned 503. Access
@@ -281,44 +281,41 @@ inferred from a successful local Windows browser session.
 `.python-version` selects Python 3.12. The Linux x86-64 build downloads the
 SHA-256-pinned artifacts in `scripts/browser-lock.json`:
 
-- `@sparticuz/chromium` 153.0.0 contains serverless Chromium **153.0.8010.0**,
-  AL2023 NSS/NSPR libraries, fonts, and SwiftShader support.
-- Google Chrome for Testing ChromeDriver **153.0.8010.52** matches the browser's
-  `MAJOR.MINOR.BUILD` (`153.0.8010`).
+- Official Chrome for Testing **156.0.8078.80** and matching ChromeDriver
+  **156.0.8078.80**, using normal Chrome capabilities and `--headless=new`.
+- `@sparticuz/chromium` 153.0.0 provides AL2023 support libraries and fonts;
+  its older headless-shell executable is replaced by official Chrome.
+- Official Amazon Linux 2023 NSS S/MIME and compatible GBM/GLAPI RPM libraries.
+  This avoids pulling LLVM/Gallium into a browser that runs with GPU disabled.
 
-The build extracts these into `vendor/browser/`, copies transitive non-glibc
-dependencies from the Linux build image, checks `ldd` and both versions, and
-starts the exact production Selenium configuration on an offline `data:` page.
-It fails rather than deploying if libraries, compatibility, startup, or the
-320 MiB expanded browser budget cannot be satisfied. The first uncompressed
-deployment was rejected with `LAMBDA_SIZE_EXCEEDED`: **274.91 MB exceeded this
-project's effective 225 MB function budget**, despite the general documentation
-advertising up to 500 MB for Python. The implementation therefore packages a
-compressed archive (with a 160 MiB budget) instead of the expanded binaries.
-The extracted artifacts before copying host libraries measured 244,863,379 bytes
-(233.52 MiB). Final Linux bundle size is logged as `BROWSER_BUNDLE` during build.
+Only unused DRM components and additional UI locale packs are omitted; browser
+resources, ICU, the existing scraper code and extraction logic remain intact.
+The Linux build image must provide `rpm2cpio`. Every download is checksum-pinned,
+`ldd` verifies dependencies, and both staging and compressed-archive startup
+are tested against an offline `data:` page before deployment.
 
-No Linux binaries or download archives are committed to Git. `includeFiles`
-explicitly packages generated `vendor/browser.tar.gz` and its integrity manifest.
-Cold starts extract that **local archive** atomically into a versioned `/tmp`
-directory, verify its checksum, and reuse the extracted executables on warm
-invocations. There are no request-time downloads. The extracted binaries and
-libraries use less than 320 MiB of the documented 500 MB `/tmp` space, leaving
-space for browser profiles. The build tests startup again from the archive after
-removing its expanded staging directory. Build downloads and tests are excluded
-from the function.
-Do not deploy a locally generated `--prepare-only` bundle: that option allows
-artifact inspection on Windows but does not test Linux execution.
+The verified preview bundle measured **413,629,224 bytes expanded** and
+**182,562,466 bytes compressed**, below the 440 MiB runtime-browser and 195 MiB
+archive budgets. The project previously rejected an expanded function of
+274.91 MB against its effective 225 MB function limit, so only the compressed
+archive is included in the function. Vercel accepted the Chrome 156 preview.
+No binaries, RPMs or archives are committed to Git. Build caches and scripts
+are excluded from the function.
 
-On Vercel, `core/browser.py` resolves explicit extracted paths, sets the library
-search path for child processes, and never falls back to Selenium Manager.
-`CHROME_BINARY_PATH` and `CHROMEDRIVER_PATH` can override the paths only as a pair.
-Each browser gets its own writable `/tmp/sandhya-chrome-*` profile/cache/config
-directory, which is removed after `quit()` or failed startup. Windows keeps its
-existing local Chrome discovery behavior. The bundled browser is identified as
-`chrome-headless-shell` so ChromeDriver creates its required initial page when a
-custom writable profile is supplied. The serverless defaults are eager page
-loading and a 20-second navigation timeout; environment overrides remain supported.
+Cold starts checksum and extract the local archive atomically into a versioned
+`/tmp` directory; warm calls reuse the executables. There are no request-time
+downloads. Browser profiles/cache are separate writable temporary directories
+and are cleaned on quit. The expanded bundle leaves room under the 500 MB
+`/tmp` limit. The normal browser slot and shutdown watchdog remain in effect.
+Explicit browser/driver environment overrides must still be configured as a
+pair, and Windows retains normal local Chrome discovery.
+
+The preceding Chromium 153 deployment returned generic Amazon 503 errors and
+an explicit homepage CAPTCHA. A Chrome 156 preview returned real Amazon products
+on multiple requests, automatically displayed both retailers, and matched the
+Olive 8 GB/128 GB variant. These are measured preview checks, not a guarantee
+against future retailer restrictions; production must be verified separately.
+Any CAPTCHA or access-denied response still stops without solving or bypassing it.
 
 `/api/browser-health` starts a browser against an offline `data:` page and reports
 availability, executability, actual browser/driver versions, startup success, and

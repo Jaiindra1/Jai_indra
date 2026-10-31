@@ -163,6 +163,29 @@ class BrowserTests(unittest.TestCase):
                 browser.create_browser()
         self.assertFalse(workspace.exists())
 
+    def test_packaged_standard_chrome_keeps_normal_browser_capability(self):
+        with tempfile.TemporaryDirectory() as root:
+            bundle = Path(root) / "browser"
+            bundle.mkdir()
+            (bundle / "browser-kind").write_text("chrome")
+            profile = tempfile.TemporaryDirectory()
+            self.addCleanup(profile.cleanup)
+            driver = MagicMock()
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(browser, "BUNDLE", bundle), \
+                 patch.object(browser, "_serverless", return_value=True), \
+                 patch.object(browser.sys, "platform", "linux"), \
+                 patch.object(browser, "_validate_binaries"), \
+                 patch.object(browser.diagnostics, "browser_environment"), \
+                 patch.object(browser.diagnostics, "enabled", return_value=False), \
+                 patch.object(browser.tempfile, "TemporaryDirectory", return_value=profile), \
+                 patch.object(browser.Service, "process", SimpleNamespace(pid=12345), create=True), \
+                 patch.object(browser.webdriver, "Chrome", return_value=driver) as chrome:
+                result = browser.create_browser(scraping=True)
+                self.assertEqual(chrome.call_args.kwargs["options"].capabilities["browserName"], "chrome")
+                browser._quit_browser(result)
+            driver.quit.assert_called_once()
+
     def test_health_does_not_expose_exception_details(self):
         with patch.object(browser, "binary_availability", side_effect=RuntimeError("/internal/private credential=secret")):
             result = browser.browser_health()
