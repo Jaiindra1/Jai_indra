@@ -125,6 +125,28 @@ def prepare():
                 if member.external_attr >> 16 & 0o111:
                     target.chmod(0o755)
         (BUNDLE / "browser-kind").write_text("chrome")
+        rpm = download("nss-smime.rpm", LOCK["nss_smime"])
+        raw = subprocess.run(["rpm2cpio", str(rpm)], capture_output=True, check=True, timeout=20).stdout
+        offset = 0
+        found = False
+        while offset + 110 <= len(raw):
+            header = raw[offset:offset+110]
+            if header[:6] not in {b"070701", b"070702"}:
+                raise RuntimeError("Invalid RPM CPIO payload.")
+            fields = [int(header[6+i*8:14+i*8], 16) for i in range(13)]
+            size, namesize = fields[6], fields[11]
+            offset += 110
+            name = raw[offset:offset+namesize-1].decode()
+            offset = (offset + namesize + 3) & ~3
+            payload = raw[offset:offset+size]
+            offset = (offset + size + 3) & ~3
+            if name == "TRAILER!!!":
+                break
+            if Path(name).name == "libsmime3.so":
+                (BUNDLE / "lib/libsmime3.so").write_bytes(payload)
+                found = True
+        if not found:
+            raise RuntimeError("Official NSS package did not contain libsmime3.so.")
     for name in ("chromium", "chromedriver"):
         assert_linux_x64(BUNDLE / name)
 

@@ -14,5 +14,9 @@
   "chrome": {
     "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/linux64/chrome-linux64.zip",
     "sha256": "b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7"
+  },
+  "nss_smime": {
+    "url": "https://cdn.amazonlinux.com/al2023/blobstore/d29491c7877c7031a2c2b2ce836e6dca9abb879e1589ffc8f6b4edccc346ebd4/nss-3.112.0-8.amzn2023.0.2.x86_64.rpm",
+    "sha256": "d29491c7877c7031a2c2b2ce836e6dca9abb879e1589ffc8f6b4edccc346ebd4"
   }
 }
