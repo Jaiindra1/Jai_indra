@@ -228,25 +228,15 @@ def _extract_image_url(card, base_url: str):
 
         for image in card.select(selector):
 
-            source = (
-                image.get("src")
-                or image.get("data-src")
-                or image.get("data-original")
-                or image.get("srcset")
-                or ""
-            )
-
-            # srcset may contain multiple entries; use its first URL.
-            source = source.split(",")[0].strip().split(" ")[0]
-
-            if not source:
-                continue
-
-            absolute_url = urljoin(base_url, source)
-
-            if absolute_url.startswith(("http://", "https://")):
-
-                if "placeholder" not in absolute_url.lower():
+            # Blocking image downloads can leave src as a data: placeholder.
+            # Inspect every lazy source instead of letting that mask data-src.
+            for attribute in ("data-src", "data-original", "data-lazy-src", "data-srcset", "srcset", "src"):
+                source = image.get(attribute) or ""
+                if not source or source.startswith("data:"):
+                    continue
+                source = source.split(",")[0].strip().split(" ")[0]
+                absolute_url = urljoin(base_url, source)
+                if absolute_url.startswith(("http://", "https://")) and "placeholder" not in absolute_url.lower():
                     return absolute_url
 
     return None
@@ -431,7 +421,7 @@ def parse_product_cards(
     if not html or max_results <= 0:
         return []
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = html if isinstance(html, BeautifulSoup) else BeautifulSoup(html, "html.parser")
 
     cards = soup.select(PRODUCT_CARD_SELECTOR)
 

@@ -213,7 +213,7 @@ def parse_amazon_product_cards(
     if not html or max_results <= 0:
         return []
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = html if isinstance(html, BeautifulSoup) else BeautifulSoup(html, "html.parser")
     cards = soup.select(PRODUCT_CARD_SELECTOR)
 
     products = []

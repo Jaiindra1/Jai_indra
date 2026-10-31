@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from threading import Lock
+from threading import Lock, BoundedSemaphore
 from time import monotonic
 from xml.sax.saxutils import escape
 
@@ -25,6 +25,11 @@ from core import search_diagnostics as diagnostics
 BUNDLE = Path(__file__).resolve().parents[1] / "vendor/browser"
 RUNTIME_TMP = Path("/tmp") if sys.platform.startswith("linux") else Path(tempfile.gettempdir())
 _bundle_lock = Lock()
+_browser_slot = BoundedSemaphore(1)
+
+
+class BrowserBusy(RuntimeError):
+    """A browser is already using this function instance's resource budget."""
 
 
 def _bundle_dir():
@@ -171,11 +176,14 @@ def _quit_browser(driver):
             temporary.cleanup()
 
 
-def create_browser():
+def create_browser(*, scraping=False):
     """Create and return a Selenium-controlled Chrome browser."""
 
     strategy, page_load_timeout = _navigation_settings()
     options = Options()
+    if scraping:
+        strategy = "eager"
+        options.add_experimental_option("browserStartupTimeout", 5000)
     if strategy is not None:
         options.page_load_strategy = strategy
     options.add_argument("--headless=new")
@@ -225,6 +233,14 @@ def create_browser():
             driver = webdriver.Chrome(options=options)
         if temporary is not None:
             driver._sandhya_workspace = temporary
+        if scraping:
+            # Fonts are irrelevant to extraction. Keep images enabled: a live
+            # comparison lost 3/24 image URLs when Flipkart image loads were
+            # blocked. Eager navigation does not wait for every image download.
+            driver.execute_cdp_cmd("Network.enable", {})
+            driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": [
+                "*.woff*", "*.ttf*", "*.otf*",
+            ]})
         if page_load_timeout is not None:
             driver.set_page_load_timeout(page_load_timeout)
         diagnostics.event("browser_navigation_settings", page_load_strategy=strategy or "default",
@@ -303,12 +319,30 @@ def browser_health():
 
 
 @contextmanager
-def browser_session():
+def browser_session(*, scraping=False):
     """Create a browser and always close it when the session ends."""
 
-    driver = create_browser()
-
+    if not _browser_slot.acquire(blocking=False):
+        raise BrowserBusy("Browser capacity is busy. Retry shortly.")
+    process_lock = None
+    driver = None
     try:
+        if _serverless():
+            # Coordinate Python workers sharing /tmp, without a database or
+            # reliance on this lock across different serverless instances.
+            import fcntl
+            process_lock = open("/tmp/sandhya-browser-slot.lock", "a")
+            try:
+                fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise BrowserBusy("Browser capacity is busy. Retry shortly.") from None
+        driver = create_browser(scraping=scraping)
         yield driver
     finally:
-        _quit_browser(driver)
+        try:
+            if driver is not None:
+                _quit_browser(driver)
+        finally:
+            if process_lock is not None:
+                process_lock.close()
+            _browser_slot.release()

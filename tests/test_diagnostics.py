@@ -2,6 +2,7 @@
 import json
 import os
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,15 +23,16 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_request_id_correlates_retailers_and_does_not_leak_query(self):
         with patch.dict(os.environ, {"SEARCH_DIAGNOSTICS": "1"}):
-            with patch("services.search_service.search_flipkart", side_effect=RetailerSearchError("Flipkart", "browser_startup")), \
-                 patch("services.search_service.search_amazon", side_effect=RetailerSearchError("Amazon", "navigation")):
+            with patch("services.search_pagination.browser_session", return_value=nullcontext(object())), \
+                 patch("services.search_pagination.scrape_page", side_effect=[
+                     RetailerSearchError("Flipkart", "browser_startup"), RetailerSearchError("Amazon", "navigation")]):
                 with self.assertLogs(diagnostics.logger, level="INFO") as logs:
                     response = app.test_client().post("/api/search", json={"query": "private-query-123"})
         self.assertEqual(response.status_code, 502)
         records = [json.loads(item.message) for item in logs.records]
         request_id = response.headers["X-Search-Request-ID"]
         self.assertTrue(all(item["request_id"] == request_id for item in records))
-        failures = [item for item in records if item["event"] == "retailer_unavailable"]
+        failures = [item for item in records if item["event"] == "page_retailer_failed"]
         self.assertEqual([item["stage"] for item in failures], ["browser_startup", "navigation"])
         self.assertEqual(records[-1]["event"], "request_finished")
         self.assertNotIn("private-query-123", " ".join(logs.output))

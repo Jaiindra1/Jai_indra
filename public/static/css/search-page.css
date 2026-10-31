@@ -79,6 +79,18 @@ h1>span { color:#7c9267; font-family:Georgia,serif; font-weight:400; font-style:
 .product-card a { font-size:14px; font-weight:650; }
 
 /* Universal listing cards: the backend supplies the facts. */
+.search-notice { color:#536457; font-size:14px; line-height:1.6; margin:12px 0; }
+.search-notice.warning { color:#8c4a18; }
+.pagination-controls { text-align:center; padding:24px 12px; min-height:90px; }
+.pagination-status { min-height:24px; color:#536457; font-size:14px; }
+.pagination-status.loading::before { content:""; display:inline-block; width:12px; height:12px; margin-right:10px; border:2px solid #c8d7c4; border-top-color:#236249; border-radius:50%; animation:pagination-spin .7s linear infinite; }
+.pagination-button { border:1px solid #236249; border-radius:9px; background:#fff; color:#236249; padding:10px 24px; cursor:pointer; font:inherit; }
+.pagination-button:disabled { opacity:.5; cursor:wait; }
+.pagination-button[hidden] { display:none; }
+.pagination-sentinel { height:1px; }
+#results-container { scroll-margin-top:20px; }
+@keyframes pagination-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .pagination-status.loading::before { animation:none; } }
 .product-image-wrapper { height:220px; display:flex; align-items:center; justify-content:center; margin-bottom:15px; }
 .product-image-wrapper img { height:100%; width:100%; object-fit:contain; margin:0; }
 .product-highlights { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 15px; }

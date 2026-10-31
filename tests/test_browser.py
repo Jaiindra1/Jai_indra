@@ -14,6 +14,16 @@ from main import app
 
 
 class BrowserTests(unittest.TestCase):
+    def test_only_one_browser_can_hold_the_instance_slot(self):
+        with patch.object(browser, "_serverless", return_value=False), \
+             patch.object(browser, "create_browser", return_value=MagicMock()) as create, \
+             patch.object(browser, "_quit_browser") as quit_browser:
+            with browser.browser_session():
+                with self.assertRaises(browser.BrowserBusy):
+                    with browser.browser_session():
+                        pass
+            self.assertEqual(create.call_count, 1)
+            self.assertEqual(quit_browser.call_count, 1)
     def test_offline_archive_extracts_once_and_reuses_warm_binaries(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

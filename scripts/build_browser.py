@@ -157,6 +157,8 @@ def main():
             manifest["archive_sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
         manifest["archive_bytes"] = archive.stat().st_size
         (BUNDLE.parent / "browser-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        # Shared deployment configuration, never persisted search state.
+        (BUNDLE.parent / "pagination.key").write_bytes(os.urandom(32))
         shutil.rmtree(BUNDLE)
         # Test the archive extraction path as well, not just the build directory.
         from core.browser import _validate_binaries, browser_health

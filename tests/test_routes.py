@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 from bs4 import BeautifulSoup
 from main import app
-from retailers.outcomes import AllRetailersFailed
+from services.search_pagination import SearchUnavailable
 
 
 class RouteTests(unittest.TestCase):
@@ -38,7 +38,7 @@ class RouteTests(unittest.TestCase):
                 asset.close()
 
     def test_search_validation(self):
-        with patch("main.search_products") as search:
+        with patch("services.search_pagination.browser_session") as search:
             response = self.client.post("/api/search", json={"query": " "})
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json["success"])
@@ -47,15 +47,16 @@ class RouteTests(unittest.TestCase):
 
     def test_search_response(self):
         products = [{"name": "Example phone", "price": 100, "retailer": "Amazon"}]
-        with patch("main.search_products", return_value=products) as search:
+        with patch("main.search_page", return_value={"items": products, "products": products, "success": True,
+                   "has_more": False, "next_cursor": None}) as search:
             response = self.client.post("/api/search", json={"query": " phone "})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json["success"])
         self.assertEqual(response.json["products"], products)
-        search.assert_called_once_with("phone", max_results=20)
+        search.assert_called_once_with(query=" phone ", first_retailer="Flipkart")
 
     def test_search_failure(self):
-        with patch("main.search_products", side_effect=AllRetailersFailed):
+        with patch("main.search_page", side_effect=SearchUnavailable({"success": False, "items": [], "products": []})):
             response = self.client.post("/api/search", json={"query": "phone"})
         self.assertEqual(response.status_code, 502)
         self.assertFalse(response.json["success"])

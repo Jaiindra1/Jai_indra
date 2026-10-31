@@ -26,7 +26,7 @@ let messageInterval = null;
 
 
 // Maximum time the browser waits for a response.
-const SEARCH_TIMEOUT = 90000;
+const SEARCH_TIMEOUT = 25000;
 
 
 // Show the loading animation.
@@ -36,7 +36,7 @@ function showLoader() {
     searchLoader.setAttribute("aria-hidden", "false");
 
     if (messageInterval !== null) clearInterval(messageInterval);
-    searchForm.querySelector('button[type="submit"]').disabled = true;
+
     resultsContainer.setAttribute("aria-busy", "true");
     let messageIndex = 0;
 
@@ -101,9 +101,10 @@ function isSafeUrl(value) {
 
 
 // Display products returned by Flask.
-function displayProducts(products) {
+function displayProducts(products, append = false) {
 
-    resultsContainer.replaceChildren();
+    if (!append) resultsContainer.replaceChildren();
+    if (append && (!products || !products.length)) return;
 
     if (!products || products.length === 0) {
 
@@ -114,13 +115,14 @@ function displayProducts(products) {
         return;
     }
 
-    const grid = document.createElement("div");
+    const grid = resultsContainer.querySelector(".products-grid") || document.createElement("div");
     grid.className = "products-grid";
 
     products.forEach(product => {
 
         const card = document.createElement("div");
         card.className = "product-card";
+        card.dataset.productId = product.id || product.url;
 
         card.append(
             createTextElement("p", product.retailer, "product-retailer")
@@ -205,113 +207,141 @@ function displayProducts(products) {
         grid.append(card);
     });
 
-    resultsContainer.append(grid);
+    if (!grid.isConnected) resultsContainer.append(grid);
 }
 
 
-// Handle the search form submission.
-searchForm.addEventListener("submit", async function (event) {
 
-    // Prevent the normal page reload.
-    event.preventDefault();
+const notices = document.createElement("div");
+notices.className = "search-notice";
+notices.setAttribute("role", "status");
+resultsContainer.before(notices);
+const controls = document.createElement("div");
+controls.className = "pagination-controls";
+const sentinel = document.createElement("div");
+sentinel.className = "pagination-sentinel";
+sentinel.id = "pagination-sentinel";
+sentinel.setAttribute("aria-hidden", "true");
+const paginationStatus = document.createElement("p");
+paginationStatus.className = "pagination-status";
+paginationStatus.setAttribute("role", "status");
+const moreButton = document.createElement("button");
+moreButton.className = "pagination-button";
+moreButton.type = "button";
+moreButton.hidden = true;
+controls.append(sentinel, paginationStatus, moreButton);
+resultsContainer.after(controls);
+const rendered = new Set();
+let searchStarted = 0;
+let lastApiMs = 0;
+let observer;
+window.__sandhyaMetrics = {pages: []};
 
-    const formData = new FormData(searchForm);
-
-    const query = formData.get("query")?.trim();
-
-    if (!query) {
-        alert("Please enter a product name.");
-        return;
-    }
-
-    // Create a controller to manage request timeout.
-    const controller = new AbortController();
-
-    let timeoutId;
-
-    showLoader();
-
+async function fetchPage({query, cursor, signal}) {
+    const started = performance.now();
+    const timeout = new AbortController();
+    const abort = () => timeout.abort();
+    signal.addEventListener("abort", abort, {once: true});
+    const timer = setTimeout(abort, cursor ? 35000 : SEARCH_TIMEOUT);
     try {
-
-        // Abort the browser request if it takes longer than 90 seconds.
-        timeoutId = setTimeout(() => {
-            controller.abort();
-        }, SEARCH_TIMEOUT);
-
-        // Send the query to Flask.
-        const response = await fetch("/api/search", {
-
-            method: "POST",
-
-            headers: {
-                "Content-Type": "application/json"
-            },
-
-            body: JSON.stringify({
-                query: query
-            }),
-
-            signal: controller.signal
-
+        const response = await fetch(cursor ? "/api/search/more?cursor=" + encodeURIComponent(cursor) : "/api/search", {
+            method: cursor ? "GET" : "POST",
+            headers: {"Content-Type": "application/json"},
+            body: cursor ? undefined : JSON.stringify({query}),
+            signal: timeout.signal,
+            cache: "no-store"
         });
-
-        // Convert Flask's JSON response.
         const data = await response.json();
-
+        lastApiMs = performance.now() - started;
+        data.request_id = response.headers.get("X-Search-Request-ID");
         if (!response.ok || !data.success) {
-
-            resultsContainer.replaceChildren(
-                createTextElement(
-                    "p",
-                    data.message || "Unable to complete the search."
-                )
-            );
-
-            return;
+            const expired = response.status === 400 && cursor;
+            const error = new Error(expired ? "This search has expired. Retry to start it again." : data.message || "Unable to load products. Please retry.");
+            error.restart = Boolean(expired);
+            throw error;
         }
-
-        // Display the returned products.
-        displayProducts(data.products);
-
+        return data;
     } catch (error) {
-
-        if (error.name === "AbortError") {
-
-            resultsContainer.replaceChildren(
-                createTextElement(
-                    "p",
-                    "The search is taking longer than expected. Please try again."
-                )
-            );
-
-        } else {
-
-            console.error("Search error:", error);
-
-            resultsContainer.replaceChildren(
-                createTextElement(
-                    "p",
-                    "Something went wrong. Please try again."
-                )
-            );
-        }
-
+        if (error.name === "AbortError" && !signal.aborted) throw new Error("The search is taking longer than expected. Please retry.");
+        throw error;
     } finally {
-
-        // Clear the timeout.
-        clearTimeout(timeoutId);
-
-        // Stop the message animation and hide the hamster.
-        hideLoader();
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
     }
-
-});
-// Dismiss the initial page loader when page resources have loaded.
-if (document.readyState === "complete") {
-    hideLoader();
-} else {
-    window.addEventListener("load", hideLoader, { once: true });
 }
-window.addEventListener("pageshow", (event) => {
-    if (event.persisted) hideLoader();
+
+const pager = new window.SandhyaPager({
+    fetchPage,
+    onPage(data, append) {
+        if (!append) rendered.clear();
+        const fresh = (data.items || []).filter(product => {
+            const id = product.id || product.url;
+            if (!id || rendered.has(id)) return false;
+            rendered.add(id);
+            return true;
+        });
+        const renderStarted = performance.now();
+        const generation = pager.generation;
+        const apiMs = lastApiMs;
+        displayProducts(fresh, append);
+        if (!append && !fresh.length) resultsContainer.replaceChildren(createTextElement("p", data.message || "No matching products found."));
+        const warnings = [...new Set((data.warnings || []).map(w =>
+            ["page_limit", "duplicate_page", "invalid_listings"].includes(w.stage)
+                ? w.message : w.retailer + " listings are unavailable right now."))];
+        notices.classList.toggle("warning", warnings.length > 0);
+        notices.textContent = warnings.length ? warnings.join(" ") : (data.pending_retailers || []).length ? "More retailers and listings load as you continue scrolling." : "";
+        if (!append && fresh.length) resultsContainer.scrollIntoView({behavior: "smooth", block: "start"});
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (generation !== pager.generation) return;
+            const metrics = {request_id: data.request_id, api_ms: apiMs,
+                render_paint_ms: performance.now() - renderStarted, items: fresh.length,
+                total_items: rendered.size};
+            window.__sandhyaMetrics.pages.push(metrics);
+            if (!append && fresh.length) {
+                window.__sandhyaMetrics.first_product_ms = performance.now() - searchStarted;
+                window.__sandhyaMetrics.first_api_ms = apiMs;
+            }
+            window.dispatchEvent(new CustomEvent("sandhya:page-rendered", {detail: metrics}));
+            maybeLoadMore();
+        }));
+    },
+    onStatus(state) {
+        if (state.loading && !state.loaded) showLoader();
+        else hideLoader();
+        const loadingMore = state.loading && state.loaded;
+        paginationStatus.classList.toggle("loading", loadingMore);
+        paginationStatus.textContent = state.error || (loadingMore ? "Loading more products?" : state.loaded && !state.hasMore ? "You?ve reached the end of this search." : "");
+        moreButton.hidden = !state.error && !state.hasMore;
+        moreButton.disabled = state.loading;
+        moreButton.textContent = state.error ? "Retry" : "Load more";
+        controls.setAttribute("aria-busy", String(loadingMore));
+    }
 });
+
+function maybeLoadMore() {
+    if (!pager.loading && !pager.error && pager.hasMore && sentinel.getBoundingClientRect().top < window.innerHeight + 400) pager.more();
+}
+if ("IntersectionObserver" in window) {
+    observer = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) pager.more();
+    }, {rootMargin: "400px 0px"});
+    observer.observe(sentinel);
+}
+moreButton.addEventListener("click", () => pager.error ? pager.retry() : pager.more());
+searchForm.addEventListener("submit", event => {
+    event.preventDefault();
+    const query = new FormData(searchForm).get("query")?.trim();
+    if (!query) return;
+    searchStarted = performance.now();
+    window.__sandhyaMetrics = {pages: []};
+    notices.textContent = "";
+    pager.search(query);
+});
+document.getElementById("product-query").addEventListener("input", () => {
+    if (pager.loading || pager.hasMore || pager.error) {
+        pager.cancel();
+        notices.textContent = "Press Find products to search for your updated query.";
+    }
+});
+hideLoader();
+window.addEventListener("pageshow", event => { if (event.persisted) { pager.cancel(); hideLoader(); } });

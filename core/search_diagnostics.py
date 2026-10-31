@@ -79,6 +79,7 @@ def error_details(error):
         ("cannot open shared object file", "missing_linux_library"),
         ("missing linux libraries", "missing_linux_library"),
         ("browser bundle integrity", "bundle_integrity_failed"),
+        ("browser capacity is busy", "browser_busy"),
         ("unable to discover open pages", "browser_initial_page_missing"),
         ("build versions do not match", "browser_driver_version_mismatch"),
         ("only supports chrome version", "browser_driver_version_mismatch"),

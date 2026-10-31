@@ -93,6 +93,7 @@
     }
 }
 </style>
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/search-page.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/hamster.css') }}">
     <noscript><style>#search-loader { display:none; }</style></noscript>
@@ -245,8 +246,9 @@
     </main>
     <footer class="site-footer"><span>SARTHI. Made for the curious.</span><span>Discover. Compare. Decide.</span></footer>
     <span aria-hidden="true"></span> Beta 1.0.</p>
+    <script src="{{ url_for('static', filename='js/search-controller.js', v='pagination-1') }}" defer></script>
     <script
-    src="{{ url_for('static', filename='js/search.js') }}"
+    src="{{ url_for('static', filename='js/search.js', v='pagination-1') }}"
     defer
 ></script>
 </body>

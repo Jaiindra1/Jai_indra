@@ -5,9 +5,9 @@ from flask import Flask, render_template, request, jsonify
 
 from services.search_service import search_products
 from services.feedback_service import send_feedback_email
-from retailers.outcomes import AllRetailersFailed
 from core import search_diagnostics as diagnostics
 from core.browser import browser_health
+from services.search_pagination import search_page, InvalidCursor, SearchUnavailable
 
 
 app = Flask(
@@ -102,60 +102,58 @@ def api_search():
     with diagnostics.request_scope() as request_id:
         response = app.make_response(_api_search())
         response.headers["X-Search-Request-ID"] = request_id
+        response.headers["Cache-Control"] = "no-store"
+        if response.status_code == 503:
+            response.headers["Retry-After"] = "2"
         diagnostics.event("api_response", stage="response", status=response.status_code)
         return response
 
 
 def _api_search():
-
-    # Read the search query from the JSON request.
-    data = request.get_json(silent=True) or {}
-    query = data.get("query", "")
-
-    # Validate the query.
-    if not isinstance(query, str) or not query.strip():
-        return jsonify({
-            "success": False,
-            "message": "Please enter a product name.",
-            "products": [],
-        }), 400
-
-    query = query.strip()
-
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _search_response_error("Please enter a product name.", 400)
     try:
-        # Reuse the existing product-search service.
-        diagnostics.event("search_started", stage="retailer_search")
-        products = search_products(query, max_results=20)
-        diagnostics.event("search_finished", stage="response", products=len(products))
-
-        return jsonify({
-            "success": True,
-            "message": (
-                "Products found successfully."
-                if products
-                else "No matching products found. Try another search."
-            ),
-            "products": products,
-        }), 200
-
-    except AllRetailersFailed:
-        diagnostics.event("search_failed", stage="retailer_search", reason="all_retailers_failed", status=502)
-        app.logger.error("AJAX product search failed: all retailers unavailable")
-        return jsonify({
-            "success": False,
-            "message": "Retailer searches are unavailable. Please try again later.",
-            "products": [],
-        }), 502
-
+        return _page_response(search_page(query=data.get("query"), first_retailer=data.get("retailer", "Flipkart")))
+    except ValueError as error:
+        return _search_response_error(str(error), 400)
+    except SearchUnavailable as error:
+        return jsonify({**error.result, "success": False}), error.status
     except Exception as error:
-        diagnostics.event("search_failed", stage="processing", status=500, **diagnostics.error_details(error))
-        app.logger.exception("AJAX product search failed")
+        diagnostics.event("search_failed", stage="pagination", status=500, **diagnostics.error_details(error))
+        return _search_response_error("Product search failed. Please try again later.", 500)
 
-        return jsonify({
-            "success": False,
-            "message": "Product search failed. Please try again later.",
-            "products": [],
-        }), 500
+
+def _page_response(result):
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Server-Timing"] = "search;dur=" + str(result.get("elapsed_ms", 0))
+    return response
+
+
+def _search_response_error(message, status):
+    return jsonify({"success": False, "message": message, "items": [], "products": [],
+                    "next_cursor": None, "has_more": False, "warnings": []}), status
+
+
+@app.get("/api/search/more")
+def api_search_more():
+    with diagnostics.request_scope() as request_id:
+        try:
+            response = _page_response(search_page(cursor=request.args.get("cursor", "")))
+        except InvalidCursor as error:
+            response = app.make_response(_search_response_error(str(error), 400))
+        except SearchUnavailable as error:
+            response = app.make_response((jsonify({**error.result, "success": False}), error.status))
+        except Exception as error:
+            diagnostics.event("search_failed", stage="pagination", status=500, **diagnostics.error_details(error))
+            response = app.make_response(_search_response_error("Unable to load more products. Please retry.", 500))
+        response.headers["X-Search-Request-ID"] = request_id
+        response.headers["Cache-Control"] = "no-store"
+        if response.status_code == 503:
+            response.headers["Retry-After"] = "2"
+        diagnostics.event("api_response", stage="response", status=response.status_code)
+        return response
 
 
 @app.route("/feedback", methods=["GET", "POST"])

@@ -12,3 +12,5 @@ data/
 .browser-downloads/
 vendor/
 verification-results.json
+.pagination-secret
+performance-results.json

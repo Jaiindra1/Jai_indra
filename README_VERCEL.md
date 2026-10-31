@@ -14,7 +14,81 @@ Local Flask serves the same directory at the same URLs. Missing CSS and JavaScri
 were restored from repository commit `e54bd29`.
 Reference: https://vercel.com/docs/frameworks/backend/flask
 
-## Run and verify locally
+## Incremental search and infinite scrolling
+
+`POST /api/search` accepts JSON `{"query":"Samsung A56"}` and returns up to eight
+real products in `items` (`products` is retained as a compatibility alias), plus
+`next_cursor`, `has_more`, `warnings`, `pending_retailers`, and `elapsed_ms`.
+`GET /api/search/more?cursor=...` continues that search. The optional initial
+`retailer` field can be `Amazon` or `Flipkart`; Flipkart is preferred by default
+because production profiling showed its results were ready before Amazon's wait.
+
+The initial response does not wait for both retailers. Remaining products from
+the already scraped marketplace page are carried in the signed cursor; buffered
+requests start no browser. Once that buffer is exhausted, retailer-specific
+adapters alternate Amazon and Flipkart and advance their actual `page` parameters.
+They inspect next-page links and stop on exhausted or fully repeated pages.
+No successful page is fetched again during a forward cursor sequence.
+
+Cursors are opaque to callers, signed, validated, limited to 14,000 characters,
+and expire after 30 minutes. They contain the query, unsent real listings, next
+marketplace page numbers, warnings and hashed listing identities; no database,
+Redis, worker cache, or persistent process state is needed. Tokens are signed,
+not encrypted; do not treat them as secret storage. A random signing key is
+packaged during the build and shared across workers of that deployment. Deploys
+invalidate older cursors; optional `PAGINATION_SECRET` (32+ characters) can retain
+validity across deploys. Local development uses an ignored `.pagination-secret`.
+
+Deduplication uses Amazon ASINs, Flipkart listing PIDs, or canonical URLs, with
+tracking parameters removed. Each search is bounded to eight pages per retailer
+and 640 identities; hitting a limit is reported in warnings. Small or exhausted
+marketplace pages can legitimately return fewer than eight listings.
+
+The browser runs with eager page loading and blocks font network requests.
+Image blocking was tested and rejected: three of 24 Flipkart listings lost image
+metadata in the comparison. Images remain enabled and parsers also inspect lazy
+image attributes; eager navigation avoids waiting for every download. A single
+browser is reused sequentially if another retailer must be attempted. A semaphore
+and a `/tmp` file lock restrict browser use within a function instance, including
+multiple Python workers. Busy searches receive 503 with `Retry-After: 2` rather
+than launching unbounded parallel browsers.
+
+Navigation and result waits share an absolute operation deadline (13 seconds for
+initial requests; 18 for continuation). Navigation is capped at eight seconds;
+card readiness is capped at four seconds for Flipkart and five for deferred
+Amazon requests. ChromeDriver startup is capped at five seconds for scraping.
+Cold archive extraction, network latency and process cleanup can still add time;
+these are engineering budgets, not a strict 15-second SLA. Logs report navigation,
+readiness, parsing, normalization, cleanup and response timings under request IDs.
+
+The frontend uses IntersectionObserver to request and append the next batch near
+the grid's end. It deduplicates appended cards, preserves existing nodes and scroll
+position, serializes requests, exposes retailer failures, offers Retry, and aborts
+obsolete fetches on query changes. A Load more button supports keyboard access
+and browsers without IntersectionObserver. Browser measurements are available in
+`window.__sandhyaMetrics`, with a `sandhya:page-rendered` event after painting.
+
+Baseline production profiling (before these changes): 32.21 seconds for the API,
+6.31 seconds for Flipkart, 25.61 seconds for Amazon's unsuccessful card wait,
+approximately 0.12 seconds per browser startup, and 1.8 ms for normalization.
+A browser measurement showed the first products at 29.59 seconds, with 68 ms
+spent appending/painting after the response. Amazon's delayed failure, rather
+than normalization or frontend rendering, was the main bottleneck.
+
+Run the Python suite and frontend race-condition tests:
+
+```powershell
+py -m unittest discover -s tests -v
+node --test tests/search_controller.test.cjs
+py scripts/profile_pagination.py --base-url https://jai-indra.vercel.app --pages 6
+py scripts/profile_pagination.py --base-url https://jai-indra.vercel.app --mobile --pages 3
+```
+
+The profiling commands contact real retailers through the deployed API. They check
+first product paint time, additional scroll batches, uniqueness, required product
+fields, retention of the first DOM card, and scroll-position preservation.
+
+## Local commands
 
 ```powershell
 py -m pip install -r requirements.txt
