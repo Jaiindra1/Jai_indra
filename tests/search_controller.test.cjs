@@ -69,3 +69,16 @@ test('expired continuation retries as a fresh search instead of reusing an inval
     await p.search('phone'); await p.more(); await p.retry();
     assert.deepEqual(cursors, [null, 'next', null]);
 });
+test('leaving for a product pauses pending work and preserves pagination for Back', async () => {
+    const pending = deferred(); let calls = 0, cursors = [], rendered = [];
+    const p = new SearchPager({fetchPage: args => {
+        cursors.push(args.cursor);
+        return ++calls === 2 ? pending.promise : Promise.resolve(page(calls === 1 ? 'saved-cursor' : null));
+    }, onPage: (data, append) => rendered.push(append), onStatus() {}});
+    await p.search('phone'); const old = p.more(); p.pause();
+    pending.resolve(page('obsolete-cursor')); await old;
+    assert.equal(p.cursor, 'saved-cursor'); assert.equal(p.hasMore, true);
+    await p.more();
+    assert.deepEqual(cursors, [null, 'saved-cursor', 'saved-cursor']);
+    assert.deepEqual(rendered, [false, true]);
+});

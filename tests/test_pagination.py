@@ -36,6 +36,9 @@ class PaginationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json
         self.assertEqual(len(data["items"]), 8)
+        self.assertTrue(all(item["detail_url"].startswith("/product/") for item in data["items"]))
+        self.assertEqual(app.test_client().get(data["items"][0]["detail_url"]).status_code, 200)
+        self.assertTrue(all("detail_url" not in item for item in pagination.decode_cursor(data["next_cursor"])["buffer"]))
         self.assertEqual(data["items"], data["products"])
         self.assertEqual(data["pending_retailers"], ["Amazon"])
         self.assertTrue(data["has_more"])

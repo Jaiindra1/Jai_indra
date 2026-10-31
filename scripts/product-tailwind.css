@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { margin: 0; }
+  a:focus-visible, button:focus-visible { outline: 2px solid #2563eb; outline-offset: 4px; }
+  [id] { scroll-margin-top: 88px; }
+  img[hidden] { display: none; }
+}
+@layer components {
+  .detail-main { padding-top: 88px; max-width: 1600px; margin-inline: auto; }
+  .detail-icon { display: inline-block; width: 20px; height: 20px; flex-shrink: 0; vertical-align: middle; }
+  .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #2563eb; color: white; font-size: 20px; }
+  .detail-nav { @apply flex items-center gap-space-sm px-space-sm py-space-sm rounded-lg text-on-surface-variant text-body-md transition-colors hover:bg-surface-container-high; }
+  .detail-nav.active { @apply bg-primary-container text-on-primary-container font-semibold; }
+  .detail-primary { @apply inline-flex items-center justify-center gap-space-sm px-space-lg rounded-lg bg-primary text-on-primary text-label-md font-semibold transition-colors hover:bg-primary-container; min-height: 48px; padding-block: 12px; }
+  .detail-secondary { @apply inline-flex items-center justify-center gap-space-xs px-space-md rounded-lg bg-surface-container-lowest text-on-surface text-label-md font-semibold shadow-sm transition-colors hover:bg-surface-container-high; min-height: 44px; padding-block: 10px; }
+  .header-search { width: min(32vw, 430px); }
+  .banner-icon { width: 48px; height: 48px; display: grid; place-items: center; flex-shrink: 0; }
+  .banner-icon .detail-icon { width: 28px; height: 28px; }
+  .history-empty .detail-icon { width: 36px; height: 36px; }
+  .detail-table { min-width: 540px; }
+  .detail-table th, .detail-table td { padding: 16px 14px; border-bottom: 1px solid #eaedff; }
+  .detail-table th:first-child { border-radius: 8px 0 0 8px; }
+  .detail-table th:last-child { border-radius: 0 8px 8px 0; }
+  .detail-main h1, .detail-main p, .detail-main dd { overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

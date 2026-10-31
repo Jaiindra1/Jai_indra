@@ -1,0 +1,137 @@
+{% macro icon(name) -%}
+<svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if name == 'back' %}<path d="m12 19-7-7 7-7M5 12h14"/>
+{% elif name == 'search' %}<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>
+{% elif name == 'external' %}<path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/>
+{% elif name == 'chart' %}<path d="M4 4v16h16M8 14l4-5 4 3 4-6"/>
+{% elif name == 'store' %}<path d="M3 9l2-6h14l2 6M3 9h18v3a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0V9m2 6v6h14v-6M10 21v-5h4v5"/>
+{% elif name == 'list' %}<path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1"/>
+{% elif name == 'check' %}<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>
+{% elif name == 'star' %}<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>
+{% elif name == 'share' %}<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m9 10.5 6-4m-6 7 6 4"/>
+{% elif name == 'image' %}<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><path d="m3 17 6-6 4 4 3-3 5 5"/>
+{% else %}<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>{% endif %}
+</svg>
+{%- endmacro %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>{{ product.name ~ ' | SARATHI' if product else 'Product unavailable | SARATHI' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/product-detail.css', v='detail-1') }}">
+  <script src="{{ url_for('static', filename='js/product-detail.js', v='detail-1') }}" defer></script>
+</head>
+<body class="bg-background font-body-md text-on-surface antialiased">
+  <aside class="detail-sidebar hidden lg:flex fixed left-0 top-0 h-screen w-64 bg-surface-container-lowest border-r border-outline-variant flex-col justify-between z-30">
+    <div>
+      <a href="{{ url_for('home') }}" class="h-16 px-space-lg flex items-center gap-space-sm border-b border-outline-variant font-headline-md text-headline-md font-bold tracking-tight">
+        <span class="brand-mark">S</span> SARATHI<span class="text-primary">.</span>
+      </a>
+      <nav class="p-space-md flex flex-col gap-space-xs" aria-label="Product navigation">
+        <p class="text-outline text-label-sm uppercase tracking-wider px-space-sm py-space-xs">Overview</p>
+        <a href="{{ url_for('home') }}" data-back-search class="detail-nav">{{ icon('back') }} Back to search</a>
+        <a href="#overview" class="detail-nav active">{{ icon('search') }} Product overview</a>
+        <a href="#details" class="detail-nav">{{ icon('list') }} Listing highlights</a>
+        <a href="#retailer-matrix" class="detail-nav">{{ icon('store') }} Retailer listing</a>
+        <a href="#price-history" class="detail-nav">{{ icon('chart') }} Price information</a>
+        <p class="text-outline text-label-sm uppercase tracking-wider px-space-sm pt-space-xl pb-space-xs">Support</p>
+        <a href="{{ url_for('feedback') }}" class="detail-nav">{{ icon('info') }} Share feedback</a>
+      </nav>
+    </div>
+    <div class="p-space-lg border-t border-outline-variant bg-surface-container-low">
+      <p class="font-semibold text-body-md">A closer look at your find.</p>
+      <p class="text-body-sm text-outline mt-space-xs">Product details from your search listing.</p>
+    </div>
+  </aside>
+  <div class="lg:pl-64">
+    <header class="detail-header fixed top-0 right-0 left-0 lg:left-64 h-16 flex items-center justify-between px-space-lg bg-surface-container-lowest border-b border-outline-variant z-20 gap-space-md">
+      <a href="{{ url_for('home') }}" data-back-search class="flex items-center gap-space-xs text-primary font-semibold text-label-md">{{ icon('back') }} <span>Back to search</span></a>
+      <a href="{{ url_for('home') }}" class="header-search hidden sm:flex items-center gap-space-sm text-outline bg-surface-container-low rounded-lg px-space-md h-10 text-body-md">{{ icon('search') }} Find your next product</a>
+      <span class="text-label-sm text-outline uppercase tracking-wider">Product details</span>
+    </header>
+    <main class="detail-main px-space-md md:px-space-xl pb-space-xl min-h-screen" id="overview">
+    {% if not product %}
+      <section class="bg-surface-container-lowest rounded-xl p-space-xl shadow-sm max-w-2xl mx-auto text-center">
+        <h1 class="text-headline-lg font-bold">This product link is unavailable</h1>
+        <p class="text-on-surface-variant mt-space-md">{{ error }}</p>
+        <a class="detail-primary mt-space-lg inline-flex" href="{{ url_for('home') }}">Search for products {{ icon('search') }}</a>
+      </section>
+    {% else %}
+      <div class="flex flex-col gap-space-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm">
+          <nav class="flex items-center gap-space-xs text-body-sm text-on-surface-variant min-w-0" aria-label="Breadcrumb">
+            <a class="text-primary hover:underline shrink-0" href="{{ url_for('home') }}">Search</a><span aria-hidden="true">/</span><span class="truncate">{{ product.name }}</span>
+          </nav>
+          <p class="text-label-sm text-outline shrink-0">Search snapshot &middot; {{ product.captured_label }}</p>
+        </div>
+        <section class="relative overflow-hidden rounded-xl bg-gradient-to-r from-secondary/15 via-surface-container to-surface-container-high p-space-lg shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-space-md">
+          <div class="flex items-center gap-space-md">
+            <span class="banner-icon bg-secondary text-on-secondary rounded-xl">{{ icon('check') }}</span>
+            <div><p class="text-label-sm text-secondary uppercase tracking-wider font-bold">Your product, in focus</p><h2 class="text-headline-md font-semibold mt-space-2xs">A little more detail before you decide.</h2><p class="text-body-sm text-on-surface-variant mt-space-xs">Review the listing, then confirm the latest price and terms on {{ product.retailer }}.</p></div>
+          </div>
+          <button id="share-product" class="detail-secondary shrink-0" type="button">{{ icon('share') }} Share product</button>
+        </section>
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg" aria-label="Selected product">
+          <div class="lg:col-span-5 flex flex-col gap-space-md">
+            <div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+              <div class="relative w-full aspect-[4/3] rounded-lg bg-surface-container-low flex items-center justify-center overflow-hidden">
+                <span class="absolute top-space-sm left-space-sm px-space-sm py-space-xs bg-surface-container-lowest/90 text-secondary text-label-sm rounded-md shadow-sm z-10">{{ product.retailer }} listing</span>
+                {% if product.image_url %}<img id="product-image" class="w-full h-full object-contain p-space-lg" src="{{ product.image_url }}" alt="{{ product.name }}" referrerpolicy="no-referrer">{% endif %}
+                <div id="product-image-fallback" class="text-outline flex-col items-center gap-space-sm {{ 'hidden' if product.image_url else 'flex' }}">{{ icon('image') }}<span class="text-body-sm">Image not provided by the retailer</span></div>
+              </div>
+              <div class="mt-space-lg"><p class="text-label-sm text-outline uppercase tracking-wider">Selected listing</p><p class="font-semibold text-body-md mt-space-xs">{{ product.name }}</p><p class="text-body-sm text-outline mt-space-xs">Variant details are shown in the listing title. Check available options at checkout.</p></div>
+            </div>
+            <div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm grid grid-cols-2 gap-space-sm">
+              <div class="flex items-start gap-space-sm">{{ icon('store') }}<div><p class="font-semibold text-label-md">{{ product.retailer }}</p><p class="text-body-sm text-outline">Original retailer listing</p></div></div>
+              <div class="flex items-start gap-space-sm">{{ icon('info') }}<div><p class="font-semibold text-label-md">Delivery &amp; warranty</p><p class="text-body-sm text-outline">Confirm on the retailer site</p></div></div>
+            </div>
+          </div>
+          <div class="lg:col-span-7 flex flex-col justify-between gap-space-lg bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+            <div class="flex flex-col gap-space-md">
+              <div class="flex items-center justify-between gap-space-sm flex-wrap"><span class="px-space-sm py-space-xs bg-surface-container text-on-surface-variant text-label-sm rounded-md uppercase tracking-wider">{{ product.category }}</span><div class="flex items-center gap-space-xs text-tertiary">{{ icon('star') }}<span id="product-rating" class="font-semibold text-on-surface">{{ product.rating ~ ' / 5' if product.rating is not none else 'Rating not provided' }}</span></div></div>
+              <h1 id="product-name" class="font-headline-lg text-headline-lg font-bold tracking-tight">{{ product.name }}</h1>
+              {% if product.highlights %}<p class="text-body-md text-on-surface-variant leading-relaxed">{{ product.highlights[:3] | join(' · ') }}</p>{% endif %}
+              <div class="p-space-md bg-surface-container-low rounded-xl">
+                <p class="text-label-sm uppercase text-outline tracking-wider">Listed price on {{ product.retailer }}</p>
+                <div class="flex items-baseline gap-space-sm flex-wrap mt-space-sm"><span id="product-price" class="font-price-hero text-price-hero font-bold">{{ product.price | inr }}</span>{% if product.original_price %}<span class="text-price-mrp text-outline line-through">{{ product.original_price | inr }}</span>{% endif %}{% if product.saving %}<span class="px-space-sm py-space-xs bg-secondary-container text-on-secondary-container text-label-sm rounded-md font-semibold">{{ product.discount }}% off &middot; Save {{ product.saving | inr }}</span>{% endif %}</div>
+                <p class="text-body-sm text-outline mt-space-md pt-space-sm border-t border-outline-variant/30">Bank offers, shipping fees, exchange discounts and EMI terms are confirmed by the retailer at checkout.</p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-space-sm">
+                <div class="bg-surface-container rounded-lg p-space-sm"><p class="text-label-sm text-outline">Retailer</p><p class="text-headline-sm font-semibold mt-space-xs">{{ product.retailer }}</p></div>
+                <div class="bg-surface-container rounded-lg p-space-sm"><p class="text-label-sm text-outline">Availability</p><p class="text-body-md font-semibold mt-space-xs">{{ product.availability }}</p></div>
+                <div class="bg-surface-container rounded-lg p-space-sm"><p class="text-label-sm text-outline">Price history</p><p class="text-body-md font-semibold mt-space-xs">Not available</p></div>
+              </div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-space-sm"><a id="retailer-link" class="detail-primary flex-1" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">View deal on {{ product.retailer }} {{ icon('external') }}</a><a class="detail-secondary" href="#retailer-matrix">{{ icon('store') }} Listing details</a></div>
+          </div>
+        </section>
+        <section id="details" class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+          <div class="flex items-center gap-space-sm text-primary">{{ icon('list') }}<h2 class="text-headline-md text-on-surface font-semibold">Listing highlights</h2></div><p class="text-body-sm text-outline mt-space-xs">Details available from this product's search listing.</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-space-lg mt-space-lg">
+            <div class="bg-secondary/5 border border-secondary/15 rounded-lg p-space-md"><h3 class="font-semibold text-secondary mb-space-md">What the listing tells us</h3><ul class="space-y-space-sm text-body-md">{% for highlight in product.highlights %}<li class="flex items-start gap-space-sm">{{ icon('check') }}<span>{{ highlight }}</span></li>{% else %}<li>Additional highlights were not provided by the retailer.</li>{% endfor %}</ul></div>
+            <div class="bg-surface-container-low rounded-lg p-space-md"><h3 class="font-semibold mb-space-md">Before you check out</h3><ul class="space-y-space-sm text-body-md text-on-surface-variant"><li>Confirm the exact model, storage, colour and included accessories.</li><li>Check delivery availability, seller details, warranty and return terms.</li><li>Recheck the final price after any shipping fees or payment offers.</li></ul></div>
+          </div>
+        </section>
+        <section id="price-history" class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+          <div class="flex items-center gap-space-sm text-primary">{{ icon('chart') }}<h2 class="text-headline-md text-on-surface font-semibold">Price information &amp; history</h2></div><p class="text-body-sm text-outline mt-space-xs">A price snapshot from your search.</p>
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-space-sm mt-space-lg"><div class="bg-surface-container-low rounded-lg p-space-md"><p class="text-label-sm text-outline">Current listing</p><p class="text-price-card font-semibold mt-space-xs">{{ product.price | inr }}</p></div><div class="bg-surface-container-low rounded-lg p-space-md"><p class="text-label-sm text-outline">Original listed price</p><p class="text-price-card font-semibold mt-space-xs">{{ product.original_price | inr }}</p></div><div class="bg-surface-container-low rounded-lg p-space-md"><p class="text-label-sm text-outline">Listed saving</p><p class="text-price-card font-semibold mt-space-xs">{{ product.saving | inr }}</p></div></div>
+          <div class="history-empty mt-space-md text-center rounded-lg border border-dashed border-outline-variant p-space-xl text-outline">{{ icon('chart') }}<p class="font-semibold text-on-surface-variant mt-space-sm">No price history available for this listing</p><p class="text-body-sm mt-space-xs">Historical lows, price trends and buying recommendations cannot be verified from this search snapshot.</p></div>
+        </section>
+        <section id="retailer-matrix" class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+          <div class="flex items-center gap-space-sm text-primary">{{ icon('store') }}<h2 class="text-headline-md text-on-surface font-semibold">Retailer listing</h2></div><p class="text-body-sm text-outline mt-space-xs">This is the selected product's listing. Other retailers' prices are not assumed to be equivalent.</p>
+          <div class="overflow-x-auto mt-space-lg"><table class="w-full text-left text-body-md detail-table"><thead><tr class="text-label-sm uppercase text-outline bg-surface-container-low"><th>Retailer</th><th>Listed price</th><th>Availability</th><th>Action</th></tr></thead><tbody><tr><td class="font-semibold">{{ product.retailer }}</td><td class="font-semibold">{{ product.price | inr }}</td><td>{{ product.availability }}</td><td><a class="text-primary font-semibold inline-flex items-center gap-space-xs" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">View deal {{ icon('external') }}</a></td></tr></tbody></table></div>
+        </section>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-space-lg">
+          <section class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm"><h2 class="text-headline-sm font-semibold">Product specifications</h2>{% if product.specifications %}<dl class="mt-space-md space-y-space-sm">{% for key, value in product.specifications.items() %}<div class="flex justify-between gap-space-md border-b border-outline-variant/30 pb-space-sm"><dt class="text-outline">{{ key }}</dt><dd class="text-right">{{ value }}</dd></div>{% endfor %}</dl>{% else %}<p class="text-body-md text-outline mt-space-md">Full specifications were not included in the search listing. Open {{ product.retailer }} for the manufacturer's complete specifications.</p>{% endif %}</section>
+          <section class="bg-primary text-on-primary rounded-xl p-space-lg shadow-sm flex flex-col justify-between gap-space-md"><div><h2 class="text-headline-sm font-semibold">Ready for a closer look?</h2><p class="text-body-md mt-space-sm opacity-90">Confirm the current price and product details directly with {{ product.retailer }}.</p></div><a class="h-12 px-space-md rounded-lg bg-white text-primary font-semibold flex items-center justify-center gap-space-sm" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">Continue to {{ product.retailer }} {{ icon('external') }}</a></section>
+        </div>
+        <p id="share-status" class="text-body-sm text-outline" role="status" aria-live="polite"></p>
+        <footer class="flex flex-col sm:flex-row justify-between gap-space-sm text-body-sm text-outline border-t border-outline-variant pt-space-md"><span>SARATHI. Made for the curious.</span><a href="{{ url_for('home') }}" data-back-search class="hover:text-primary">Back to product search</a></footer>
+      </div>
+    {% endif %}
+    </main>
+  </div>
+</body>
+</html>

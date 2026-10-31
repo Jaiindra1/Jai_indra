@@ -101,6 +101,21 @@ function isSafeUrl(value) {
 
 
 // Display products returned by Flask.
+function productDetailUrl(product) {
+    return typeof product.detail_url === "string" && /^\/product\/[A-Za-z0-9_.-]+$/.test(product.detail_url)
+        ? product.detail_url : null;
+}
+
+function wireProductCard(card, detailUrl) {
+    if (!detailUrl) return;
+    card.classList.add("has-detail");
+    card.addEventListener("click", event => {
+        if (event.target.closest("a, button, input, select, textarea") || window.getSelection()?.toString()) return;
+        if (event.ctrlKey || event.metaKey) window.open(detailUrl, "_blank", "noopener,noreferrer");
+        else window.location.assign(detailUrl);
+    });
+}
+
 function displayProducts(products, append = false) {
 
     if (!append) resultsContainer.replaceChildren();
@@ -123,6 +138,8 @@ function displayProducts(products, append = false) {
         const card = document.createElement("div");
         card.className = "product-card";
         card.dataset.productId = product.id || product.url;
+        const detailUrl = productDetailUrl(product);
+        wireProductCard(card, detailUrl);
 
         card.append(
             createTextElement("p", product.retailer, "product-retailer")
@@ -138,13 +155,25 @@ function displayProducts(products, append = false) {
 
             const wrapper = document.createElement("div");
             wrapper.className = "product-image-wrapper";
-            wrapper.append(image);
+            if (detailUrl) {
+                const imageLink = document.createElement("a");
+                imageLink.className = "product-image-link";
+                imageLink.href = detailUrl;
+                imageLink.setAttribute("aria-label", "View " + product.name + " details");
+                imageLink.append(image);
+                wrapper.append(imageLink);
+            } else wrapper.append(image);
             card.append(wrapper);
         }
 
-        card.append(
-            createTextElement("h3", product.name, "product-title")
-        );
+        const title = createTextElement("h3", product.name, "product-title");
+        if (detailUrl) {
+            const titleLink = document.createElement("a");
+            titleLink.href = detailUrl;
+            titleLink.className = "product-title-link";
+            titleLink.append(title);
+            card.append(titleLink);
+        } else card.append(title);
 
         if (Array.isArray(product.highlights) && product.highlights.length) {
             const highlights = document.createElement("div");
@@ -196,9 +225,11 @@ function displayProducts(products, append = false) {
             const link = document.createElement("a");
 
             link.className = "product-button";
-            link.href = product.url;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
+            link.href = detailUrl || product.url;
+            if (!detailUrl) {
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+            }
             link.textContent = "View Product";
 
             card.append(link);
@@ -344,4 +375,9 @@ document.getElementById("product-query").addEventListener("input", () => {
     }
 });
 hideLoader();
-window.addEventListener("pageshow", event => { if (event.persisted) { pager.cancel(); hideLoader(); } });
+document.querySelectorAll(".product-card[data-detail-url]").forEach(card => {
+    const url = productDetailUrl({detail_url: card.dataset.detailUrl});
+    wireProductCard(card, url);
+});
+window.addEventListener("pagehide", () => pager.pause());
+window.addEventListener("pageshow", event => { if (event.persisted) { pager.emit(); hideLoader(); } });

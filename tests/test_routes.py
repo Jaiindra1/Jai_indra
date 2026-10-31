@@ -1,6 +1,7 @@
 """Route checks without Selenium, email delivery, or storage."""
 import unittest
 from unittest.mock import patch
+from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from main import app
 from services.search_pagination import SearchUnavailable
@@ -34,7 +35,7 @@ class RouteTests(unittest.TestCase):
                 asset = self.client.get(url)
                 self.assertEqual(asset.status_code, 200)
                 self.assertTrue(asset.data)
-                self.assertIn("text/css" if url.endswith(".css") else "javascript", asset.content_type)
+                self.assertIn("text/css" if urlsplit(url).path.endswith(".css") else "javascript", asset.content_type)
                 asset.close()
 
     def test_search_validation(self):

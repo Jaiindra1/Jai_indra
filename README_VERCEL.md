@@ -14,6 +14,33 @@ Local Flask serves the same directory at the same URLs. Missing CSS and JavaScri
 were restored from repository commit `e54bd29`.
 Reference: https://vercel.com/docs/frameworks/backend/flask
 
+## Product detail page
+
+Product images, titles, cards and View Product links open `/product/<signed-snapshot>`.
+The detail page adapts the supplied dashboard design and displays that selected
+listing's image, title, price, original price, rating, highlights, category and
+available specifications. Retailer buttons retain the real canonical marketplace
+URL. Missing history, offers, delivery and warranty data are labelled honestly;
+sample prices, accounts, recommendations and tracking data are not displayed.
+
+Snapshots are signed server-side with a separate signing salt, require no database
+or second scrape, and expire after 24 hours (or earlier if the deployment key
+changes). Invalid links return 404 and expired links 410 with a search-page link.
+Snapshots use `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+Detail tokens are attached only to outgoing search batches, not cursor buffers.
+Back navigation retains search cards and pagination when the browser restores
+the search page from its back/forward cache.
+
+The supplied Tailwind theme is compiled into local static CSS; no Tailwind CDN
+script is loaded in the product page. To rebuild its stylesheet after a design edit:
+
+```powershell
+npx --yes --package tailwindcss@3.4.17 tailwindcss -c scripts/product-tailwind.config.cjs -i scripts/product-tailwind.css -o public/static/css/product-detail.css --minify
+```
+
+The hamster animation uses 12.6px instead of its previous effective 14px base,
+reducing all em-based dimensions by 10%.
+
 ## Incremental search and infinite scrolling
 
 `POST /api/search` accepts JSON `{"query":"Samsung A56"}` and returns up to eight

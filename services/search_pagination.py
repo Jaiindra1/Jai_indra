@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import re
 import secrets
-from time import monotonic
+from time import monotonic, time
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 
 from itsdangerous import BadData, URLSafeTimedSerializer
@@ -135,6 +135,7 @@ def normalize_listing(item, query, retailer):
                       availability=item.get("availability"))
     normalized = product.to_dict()
     normalized["id"] = identity[0]
+    normalized["captured_at"] = int(time())
     return normalized
 
 
@@ -219,6 +220,10 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart"):
         state["seen"] = state["seen"][:MAX_SEEN]
     has_more = bool(state["buffer"] or any(state["pages"].values()))
     token = encode_cursor(state) if has_more else None
+    # Sign only the outgoing batch, keeping detail tokens out of cursor buffers.
+    from services.product_details import product_path
+    for item in items:
+        item["detail_url"] = product_path(item)
     elapsed = round(monotonic() - started, 3)
     result = {"items": items, "products": items, "next_cursor": token, "has_more": has_more,
               "warnings": state["warnings"], "pending_retailers": [r for r, p in state["pages"].items() if p == 1],

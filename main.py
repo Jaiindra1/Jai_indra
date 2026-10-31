@@ -8,6 +8,7 @@ from services.feedback_service import send_feedback_email
 from core import search_diagnostics as diagnostics
 from core.browser import browser_health
 from services.search_pagination import search_page, InvalidCursor, SearchUnavailable
+from services.product_details import product_path, load_product, inr, InvalidProductLink, ExpiredProductLink
 
 
 app = Flask(
@@ -17,6 +18,20 @@ app = Flask(
     static_url_path="/static",
 )
 _browser_health_lock = Lock()
+app.jinja_env.filters["inr"] = inr
+
+
+@app.get("/product/<token>")
+def product_detail(token):
+    try:
+        product = load_product(token)
+        response = app.make_response(render_template("product_detail.html", product=product, error=None))
+    except InvalidProductLink as error:
+        response = app.make_response((render_template("product_detail.html", product=None, error=str(error)),
+                                      410 if isinstance(error, ExpiredProductLink) else 404))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @app.get("/api/browser-health")
@@ -88,6 +103,11 @@ def home():
                 app.logger.exception("Product search failed")
                 message = "Product search failed. Please try again later."
 
+    for product in products:
+        try:
+            product["detail_url"] = product_path(product)
+        except InvalidProductLink:
+            product["detail_url"] = None
     return render_template(
         "index.html",
         query=query,

@@ -43,7 +43,7 @@
 
 /* Make the original hamster animation slightly smaller */
 .wheel-and-hamster {
-    font-size: 12px;
+    font-size: 12.6px;
 }
 
 /* Product results */
@@ -95,7 +95,7 @@
 </style>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/search-page.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/hamster.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hamster.css', v='hamster-90') }}">
     <noscript><style>#search-loader { display:none; }</style></noscript>
 </head>
 
@@ -183,24 +183,28 @@
 
         <div class="products-grid">
             {% for product in products %}
-                <div class="product-card">
+                <div class="product-card" data-detail-url="{{ product.detail_url or '' }}">
                     <p class="product-retailer">{{ product.retailer }}</p>
 
                     {% if product.image_url %}
                         <div class="product-image-wrapper">
+                        {% if product.detail_url %}<a class="product-image-link" href="{{ product.detail_url }}" aria-label="View {{ product.name }} details">{% endif %}
                         <img
                             src="{{ product.image_url }}"
                             alt="{{ product.name }}"
                             loading="lazy"
                         >
+                        {% if product.detail_url %}</a>{% endif %}
                         </div>
                     {% endif %}
 
+                   {% if product.detail_url %}<a class="product-title-link" href="{{ product.detail_url }}">{% endif %}
                    <h3 class="product-title"
                         title="{{ product.name }}"
                         aria-label="{{ product.name }}">
                         {{ product.name[:120] }}{% if product.name|length > 120 %}...{% endif %}
                     </h3>
+                    {% if product.detail_url %}</a>{% endif %}
                     {% if product.highlights %}
                         <div class="product-highlights">
                             {% for highlight in product.highlights %}
@@ -230,7 +234,7 @@
                     {% endif %}
 
                     {% if product.url %}
-                        <a class="product-button" href="{{ product.url }}" target="_blank" rel="noopener noreferrer">
+                        <a class="product-button" href="{{ product.detail_url or product.url }}">
                             View Product
                         </a>
                     {% endif %}
@@ -246,9 +250,9 @@
     </main>
     <footer class="site-footer"><span>SARTHI. Made for the curious.</span><span>Discover. Compare. Decide.</span></footer>
     <span aria-hidden="true"></span> Beta 1.0.</p>
-    <script src="{{ url_for('static', filename='js/search-controller.js', v='pagination-1') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/search-controller.js', v='product-details-1') }}" defer></script>
     <script
-    src="{{ url_for('static', filename='js/search.js', v='pagination-1') }}"
+    src="{{ url_for('static', filename='js/search.js', v='product-details-1') }}"
     defer
 ></script>
 </body>

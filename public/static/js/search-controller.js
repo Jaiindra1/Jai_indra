@@ -28,6 +28,13 @@
             this.loaded = false;
             this.emit();
         }
+        pause() {
+            this.generation += 1;
+            this.abortController?.abort();
+            this.abortController = null;
+            this.loading = false;
+            this.emit();
+        }
         async search(query) {
             this.cancel();
             this.query = query;
