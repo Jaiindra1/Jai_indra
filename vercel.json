@@ -5,7 +5,7 @@
   "functions": {
     "main.py": {
       "maxDuration": 120,
-      "includeFiles": "{templates/**,vendor/browser/**}",
+      "includeFiles": "{templates/**,vendor/browser.tar.gz,vendor/browser-manifest.json}",
       "excludeFiles": "{tests/**,.browser-downloads/**,scripts/**}"
     }
   }

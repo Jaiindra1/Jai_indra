@@ -99,23 +99,34 @@ The build extracts these into `vendor/browser/`, copies transitive non-glibc
 dependencies from the Linux build image, checks `ldd` and both versions, and
 starts the exact production Selenium configuration on an offline `data:` page.
 It fails rather than deploying if libraries, compatibility, startup, or the
-320 MiB browser budget cannot be satisfied. Vercel also enforces its total
-500 MB uncompressed Python function limit, including Python dependencies.
+320 MiB expanded browser budget cannot be satisfied. The first uncompressed
+deployment was rejected with `LAMBDA_SIZE_EXCEEDED`: **274.91 MB exceeded this
+project's effective 225 MB function budget**, despite the general documentation
+advertising up to 500 MB for Python. The implementation therefore packages a
+compressed archive (with a 160 MiB budget) instead of the expanded binaries.
 The extracted artifacts before copying host libraries measured 244,863,379 bytes
 (233.52 MiB). Final Linux bundle size is logged as `BROWSER_BUNDLE` during build.
 
 No Linux binaries or download archives are committed to Git. `includeFiles`
-explicitly packages generated browser files in the Flask function; downloads
-happen at build time only. The build cache and tests are excluded from the function.
+explicitly packages generated `vendor/browser.tar.gz` and its integrity manifest.
+Cold starts extract that **local archive** atomically into a versioned `/tmp`
+directory, verify its checksum, and reuse the extracted executables on warm
+invocations. There are no request-time downloads. The extracted binaries and
+libraries use less than 320 MiB of the documented 500 MB `/tmp` space, leaving
+space for browser profiles. The build tests startup again from the archive after
+removing its expanded staging directory. Build downloads and tests are excluded
+from the function.
 Do not deploy a locally generated `--prepare-only` bundle: that option allows
 artifact inspection on Windows but does not test Linux execution.
 
-On Vercel, `core/browser.py` resolves explicit bundled paths, sets the library
+On Vercel, `core/browser.py` resolves explicit extracted paths, sets the library
 search path for child processes, and never falls back to Selenium Manager.
 `CHROME_BINARY_PATH` and `CHROMEDRIVER_PATH` can override the paths only as a pair.
 Each browser gets its own writable `/tmp/sandhya-chrome-*` profile/cache/config
 directory, which is removed after `quit()` or failed startup. Windows keeps its
-existing local Chrome discovery behavior. The serverless defaults are eager page
+existing local Chrome discovery behavior. The bundled browser is identified as
+`chrome-headless-shell` so ChromeDriver creates its required initial page when a
+custom writable profile is supplied. The serverless defaults are eager page
 loading and a 20-second navigation timeout; environment overrides remain supported.
 
 `/api/browser-health` starts a browser against an offline `data:` page and reports

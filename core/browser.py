@@ -2,13 +2,18 @@
 from contextlib import contextmanager
 from functools import lru_cache
 import math
+import errno
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+from threading import Lock
 from time import monotonic
 from xml.sax.saxutils import escape
 
@@ -18,6 +23,38 @@ from selenium.webdriver.chrome.service import Service
 from core import search_diagnostics as diagnostics
 
 BUNDLE = Path(__file__).resolve().parents[1] / "vendor/browser"
+RUNTIME_TMP = Path("/tmp") if sys.platform.startswith("linux") else Path(tempfile.gettempdir())
+_bundle_lock = Lock()
+
+
+def _bundle_dir():
+    """Offline cold-start extraction; binaries are shipped inside the function."""
+    archive = BUNDLE.with_suffix(".tar.gz")
+    if BUNDLE.is_dir() or not archive.is_file():
+        return BUNDLE
+    manifest = json.loads((BUNDLE.parent / "browser-manifest.json").read_text())
+    digest = manifest["archive_sha256"]
+    target = RUNTIME_TMP / ("sandhya-browser-" + digest[:16])
+    with _bundle_lock:
+        if not (target / "chromium").is_file() or not (target / "chromedriver").is_file():
+            started = monotonic()
+            with archive.open("rb") as source:
+                if hashlib.file_digest(source, "sha256").hexdigest() != digest:
+                    raise RuntimeError("Browser bundle integrity check failed.")
+            with tempfile.TemporaryDirectory(prefix="sandhya-unpack-", dir=RUNTIME_TMP) as staging:
+                with tarfile.open(archive) as packaged:
+                    packaged.extractall(staging, filter="data")
+                for name in ("chromium", "chromedriver"):
+                    (Path(staging) / name).chmod(0o755)
+                try:
+                    os.rename(staging, target)
+                except OSError as error:
+                    # Another process has atomically published the same archive.
+                    if error.errno not in {errno.EEXIST, errno.ENOTEMPTY} or not (target / "chromium").is_file() or not (target / "chromedriver").is_file():
+                        raise
+            diagnostics.event("browser_bundle_extracted", seconds=round(monotonic() - started, 3),
+                              expanded_bytes=manifest["bundle_bytes"])
+    return target
 
 
 def _serverless():
@@ -35,11 +72,12 @@ def _child_environment(workspace):
                XDG_CACHE_HOME=str(workspace / "cache"),
                XDG_CONFIG_HOME=str(workspace / "config"),
                SE_CACHE_PATH=str(workspace / "selenium"), SE_OFFLINE="true")
-    libraries = BUNDLE / "lib"
+    bundle = _bundle_dir()
+    libraries = bundle / "lib"
     env["LD_LIBRARY_PATH"] = str(libraries) + ":" + env.get("LD_LIBRARY_PATH", "")
     config = workspace / "fonts.conf"
     config.write_text("<?xml version='1.0'?><!DOCTYPE fontconfig SYSTEM 'fonts.dtd'>"
-                      "<fontconfig><dir>" + escape(str(BUNDLE / "fonts/fonts")) + "</dir>"
+                      "<fontconfig><dir>" + escape(str(bundle / "fonts/fonts")) + "</dir>"
                       "<cachedir>" + escape(str(workspace / "font-cache")) + "</cachedir></fontconfig>")
     env["FONTCONFIG_FILE"] = str(config)
     return env
@@ -60,7 +98,7 @@ def _validate_binaries(browser_path, driver_path):
         try:
             env = os.environ.copy()
             if _serverless():
-                env["LD_LIBRARY_PATH"] = str(BUNDLE / "lib") + ":" + env.get("LD_LIBRARY_PATH", "")
+                env["LD_LIBRARY_PATH"] = str(_bundle_dir() / "lib") + ":" + env.get("LD_LIBRARY_PATH", "")
             result = subprocess.run([path, "--version"], capture_output=True, text=True,
                                     timeout=5, check=True, env=env)
         except subprocess.CalledProcessError as error:
@@ -89,7 +127,8 @@ def _explicit_paths():
     if not browser and _serverless():
         # Always explicit on Vercel, even if the build bundle is missing. Never
         # fall through to Selenium Manager/network downloads in a request.
-        browser, driver = str(BUNDLE / "chromium"), str(BUNDLE / "chromedriver")
+        bundle = _bundle_dir()
+        browser, driver = str(bundle / "chromium"), str(bundle / "chromedriver")
     if not browser and os.getenv("RENDER", "").lower() == "true":
         raise RuntimeError("Render requires CHROME_BINARY_PATH and CHROMEDRIVER_PATH; runtime downloads are disabled.")
     return tuple(os.path.expandvars(os.path.expanduser(p)) for p in (browser, driver))
@@ -169,7 +208,7 @@ def create_browser():
         if browser_path:
             _validate_binaries(browser_path, driver_path)
             options.binary_location = browser_path
-            if _serverless() and browser_path == str(BUNDLE / "chromium"):
+            if _serverless() and not os.getenv("CHROME_BINARY_PATH", "").strip():
                 # This binary is chrome-headless-shell. With a custom profile,
                 # ChromeDriver creates the required initial page only when the
                 # correct browserName is supplied (chrome_launcher.cc).

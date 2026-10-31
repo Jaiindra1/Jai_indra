@@ -146,6 +146,25 @@ def main():
                 "driver_version": LOCK["driver_version"], "bundle_bytes": size,
                 "linux_startup_verified": not args.prepare_only}
     (BUNDLE / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if not args.prepare_only:
+        archive = BUNDLE.with_suffix(".tar.gz")
+        with tarfile.open(archive, "w:gz", compresslevel=6) as packaged:
+            for path in sorted(BUNDLE.rglob("*")):
+                packaged.add(path, arcname=path.relative_to(BUNDLE), recursive=False)
+        if archive.stat().st_size > 160 * 1024 * 1024:
+            raise RuntimeError("Compressed browser exceeds the 160 MiB packaging budget.")
+        with archive.open("rb") as source:
+            manifest["archive_sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
+        manifest["archive_bytes"] = archive.stat().st_size
+        (BUNDLE.parent / "browser-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        shutil.rmtree(BUNDLE)
+        # Test the archive extraction path as well, not just the build directory.
+        from core.browser import _validate_binaries, browser_health
+        _validate_binaries.cache_clear()
+        packaged_health = browser_health()
+        print("PACKAGED_BROWSER_HEALTH", json.dumps(packaged_health), flush=True)
+        if not packaged_health["startup_success"]:
+            raise RuntimeError("Packaged browser startup failed: " + packaged_health["error_category"])
     print("BROWSER_BUNDLE", json.dumps(manifest), flush=True)
 
 

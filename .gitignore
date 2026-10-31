@@ -10,5 +10,5 @@ data/
 .vercel/
 .repo-publish/
 .browser-downloads/
-vendor/browser/
+vendor/
 verification-results.json

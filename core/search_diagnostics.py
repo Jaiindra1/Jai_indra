@@ -78,6 +78,8 @@ def error_details(error):
         ("error while loading shared libraries", "missing_linux_library"),
         ("cannot open shared object file", "missing_linux_library"),
         ("missing linux libraries", "missing_linux_library"),
+        ("browser bundle integrity", "bundle_integrity_failed"),
+        ("unable to discover open pages", "browser_initial_page_missing"),
         ("build versions do not match", "browser_driver_version_mismatch"),
         ("only supports chrome version", "browser_driver_version_mismatch"),
         ("cannot find chrome binary", "browser_binary_missing"),
@@ -129,12 +131,12 @@ def browser_environment(refresh=False):
         configured_browser = os.getenv("CHROME_BINARY_PATH")
         configured_driver = os.getenv("CHROMEDRIVER_PATH")
         # Runtime fallback paths are explicit too, even without dashboard env vars.
-        from core.browser import _explicit_paths, BUNDLE, _serverless
+        from core.browser import _explicit_paths, _bundle_dir, _serverless
         if _serverless():
             configured_browser, configured_driver = _explicit_paths()
         probe_env = os.environ.copy()
         if _serverless():
-            probe_env["LD_LIBRARY_PATH"] = str(BUNDLE / "lib") + ":" + probe_env.get("LD_LIBRARY_PATH", "")
+            probe_env["LD_LIBRARY_PATH"] = str(_bundle_dir() / "lib") + ":" + probe_env.get("LD_LIBRARY_PATH", "")
         # Manager cache availability is distinct from PATH availability.
         cache = Path(os.getenv("SE_CACHE_PATH") or Path.home() / ".cache" / "selenium")
         browser_name = "chrome.exe" if platform.system() == "Windows" else "chrome"
@@ -143,7 +145,7 @@ def browser_environment(refresh=False):
         cached_driver = list(cache.glob(f"chromedriver/**/{driver_name}"))[:3] if cache.is_dir() else []
         event("browser_environment", platform=platform.system(), architecture=platform.machine(),
               selenium_version=version("selenium"), browser_on_path=browser_on_path,
-              browser_installed=any(browsers),
+              browser_installed=any(browsers) or bool(configured_browser and Path(configured_browser).is_file()),
               driver_on_path=any(drivers), chrome_in_manager_cache=bool(cached_chrome),
               driver_in_manager_cache=bool(cached_driver),
               explicit_browser_configured=bool(configured_browser),

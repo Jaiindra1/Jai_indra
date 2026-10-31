@@ -1,6 +1,10 @@
 import os
+import hashlib
+import io
+import json
 from pathlib import Path
 import tempfile
+import tarfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -10,6 +14,34 @@ from main import app
 
 
 class BrowserTests(unittest.TestCase):
+    def test_offline_archive_extracts_once_and_reuses_warm_binaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "vendor/browser"
+            bundle.parent.mkdir()
+            archive = bundle.with_suffix(".tar.gz")
+            with tarfile.open(archive, "w:gz") as packaged:
+                for name in ("chromium", "chromedriver"):
+                    info = tarfile.TarInfo(name)
+                    info.size = 4
+                    packaged.addfile(info, io.BytesIO(b"test"))
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            (bundle.parent / "browser-manifest.json").write_text(json.dumps({
+                "archive_sha256": digest, "bundle_bytes": 8,
+            }))
+            with patch.object(browser, "BUNDLE", bundle), patch.object(browser, "RUNTIME_TMP", root):
+                extracted = browser._bundle_dir()
+                self.assertEqual((extracted / "chromium").read_bytes(), b"test")
+                with patch.object(browser.tarfile, "open") as unpack:
+                    self.assertEqual(browser._bundle_dir(), extracted)
+                    unpack.assert_not_called()
+                # A fresh target must reject a tampered packaged archive.
+                (bundle.parent / "browser-manifest.json").write_text(json.dumps({
+                    "archive_sha256": "0" * 64, "bundle_bytes": 8,
+                }))
+                with self.assertRaisesRegex(RuntimeError, "integrity"):
+                    browser._bundle_dir()
+
     def test_vercel_paths_are_explicit_even_when_bundle_missing(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(browser, "_serverless", return_value=True):
             chrome, driver = browser._explicit_paths()
