@@ -241,7 +241,7 @@ def create_browser(*, scraping=False):
         if browser_path:
             _validate_binaries(browser_path, driver_path)
             options.binary_location = browser_path
-            if _serverless() and not os.getenv("CHROME_BINARY_PATH", "").strip():
+            if _serverless() and not os.getenv("CHROME_BINARY_PATH", "").strip() and not (Path(browser_path).parent / "browser-kind").is_file():
                 # This binary is chrome-headless-shell. With a custom profile,
                 # ChromeDriver creates the required initial page only when the
                 # correct browserName is supplied (chrome_launcher.cc).

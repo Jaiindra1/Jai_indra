@@ -28,7 +28,7 @@ BUNDLE = ROOT / "vendor/browser"
 CACHE = ROOT / ".browser-downloads"
 LOCK = json.loads((Path(__file__).with_name("browser-lock.json")).read_text())
 # Leave 180 MiB for Python dependencies/framework/runtime overhead.
-MAX_BROWSER_BYTES = 320 * 1024 * 1024
+MAX_BROWSER_BYTES = (440 if LOCK.get("browser_kind") == "chrome" else 320) * 1024 * 1024
 SYSTEM_LIBRARIES = re.compile(r"^(?:ld-linux|lib(?:c|m|dl|pthread|rt|resolv|util)\.so)")
 
 
@@ -89,7 +89,7 @@ def collect_libraries():
 
 def prepare():
     package = download("chromium.tgz", LOCK["chromium_package"])
-    driver = download("driver153.zip", LOCK["chromedriver"])
+    driver = download("driver-" + LOCK["driver_version"] + ".zip", LOCK["chromedriver"])
     # Remove stale files only from this script's fixed generated bundle directory.
     if BUNDLE.exists():
         shutil.rmtree(BUNDLE)
@@ -107,6 +107,24 @@ def prepare():
             name = Path(member).name
             if name in {"chromedriver", "LICENSE.chromedriver", "THIRD_PARTY_NOTICES.chromedriver"}:
                 (BUNDLE / name).write_bytes(archive.read(member))
+    if LOCK.get("browser_kind") == "chrome":
+        chrome = download("chrome-" + LOCK["browser_version"] + ".zip", LOCK["chrome"])
+        with zipfile.ZipFile(chrome) as archive:
+            for member in archive.infolist():
+                relative = Path(member.filename).relative_to("chrome-linux64")
+                if not relative.parts or member.is_dir():
+                    continue
+                # DRM and extra UI locales are not used by these headless pages.
+                if relative.parts[0] == "WidevineCdm" or relative.parts[0] == "locales" and relative.name != "en-US.pak":
+                    continue
+                if relative.parts[0] == ".." or relative.is_absolute():
+                    raise RuntimeError("Unsafe Chrome artifact member.")
+                target = BUNDLE / ("chromium" if str(relative) == "chrome" else relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(member))
+                if member.external_attr >> 16 & 0o111:
+                    target.chmod(0o755)
+        (BUNDLE / "browser-kind").write_text("chrome")
     for name in ("chromium", "chromedriver"):
         assert_linux_x64(BUNDLE / name)
 
@@ -151,7 +169,7 @@ def main():
         with tarfile.open(archive, "w:gz", compresslevel=6) as packaged:
             for path in sorted(BUNDLE.rglob("*")):
                 packaged.add(path, arcname=path.relative_to(BUNDLE), recursive=False)
-        if archive.stat().st_size > 160 * 1024 * 1024:
+        if archive.stat().st_size > (195 if LOCK.get("browser_kind") == "chrome" else 160) * 1024 * 1024:
             raise RuntimeError("Compressed browser exceeds the 160 MiB packaging budget.")
         with archive.open("rb") as source:
             manifest["archive_sha256"] = hashlib.file_digest(source, "sha256").hexdigest()

@@ -1,13 +1,18 @@
 {
   "platform": "linux-x86_64",
-  "browser_version": "153.0.8010.0",
-  "driver_version": "153.0.8010.52",
+  "browser_version": "156.0.8078.80",
+  "driver_version": "156.0.8078.80",
   "chromium_package": {
     "url": "https://registry.npmjs.org/@sparticuz/chromium/-/chromium-153.0.0.tgz",
     "sha256": "20e5656fcdcf4118ede85edfb9d6bb9cc1bbb7ffb8b75622fffbcf36a835c3c0"
   },
   "chromedriver": {
-    "url": "https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.52/linux64/chromedriver-linux64.zip",
-    "sha256": "7726029da262768fd8770212ac54296f4d31afe790a951f98d5580437da533b1"
+    "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/linux64/chromedriver-linux64.zip",
+    "sha256": "cae58bbd262ba5c8a0ce2540f44254b6e789efc4fe9b18bbb4a00487a9f5859e"
+  },
+  "browser_kind": "chrome",
+  "chrome": {
+    "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/linux64/chrome-linux64.zip",
+    "sha256": "b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7"
   }
 }
