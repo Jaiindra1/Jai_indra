@@ -182,6 +182,7 @@ fields, retention of the first DOM card, and scroll-position preservation.
 
 ```powershell
 py -m pip install -r requirements.txt
+$env:RETAILER_MODE = "fixture"
 py -m unittest discover -s tests -v
 py main.py
 ```
@@ -195,8 +196,10 @@ response contracts, retailer failure responses, feedback validation, and 404s.
 1. Import the repository with the project root as Root Directory.
 2. Use the **Flask** framework preset (also set in `vercel.json`). Clear old
    dashboard Build Command and Output Directory overrides. The repository sets
-   `python scripts/build_browser.py` as the build command.
+   the React build plus `python scripts/build_browser.py` as the build command.
 3. Deploy. No database configuration is needed.
+   `vercel.json` explicitly sets `RETAILER_MODE=live`; production never falls
+   back to saved fixture HTML when Selenium or a retailer fails.
 4. For feedback email, set `MAIL_USERNAME`, `MAIL_PASSWORD` (Gmail App Password),
    and `FEEDBACK_RECIPIENT` in Vercel environment settings.
 

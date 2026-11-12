@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from retailers import amazon, flipkart
 from retailers.detail_enrichment import enrich_listing as enrich_product_listing
 from retailers.navigation import RetailerPage, next_page_number, scrape_search_page
+from services.retailer_mode import retailer_mode
 
 
 def page_url(retailer, query, page):
@@ -15,6 +16,9 @@ def page_url(retailer, query, page):
 
 
 def scrape_page(driver, retailer, query, page, deadline):
+    if retailer_mode() == "fixture":
+        from retailers.fixture_acquisition import fixture_search_page
+        return fixture_search_page(retailer, query, page)
     if retailer == "Amazon":
         return amazon.search_amazon_page(driver, query, page=page, deadline=deadline)
     if retailer != "Flipkart":

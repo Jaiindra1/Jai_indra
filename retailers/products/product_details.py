@@ -8,16 +8,23 @@ from .errors import ProductDetailError
 from .url_validation import validate_detail_url
 from .cache import _CACHE, _cache_get, _cache_put  # Compatibility with existing tests.
 from .navigation import _load_with_driver
+from services.retailer_mode import retailer_mode, source_fields
 
 
 def get_product_details(url, retailer, *, driver=None, deadline=None, cache_ttl=90, force_refresh=False):
+    mode = retailer_mode()
     canonical = validate_detail_url(url, retailer)
     if deadline is not None and deadline <= monotonic():
         raise ProductDetailError("deadline_exceeded", "Product detail request deadline exceeded")
-    key = retailer, canonical
+    key = mode, retailer, canonical
     if not force_refresh and (saved := _cache_get(key)) is not None:
         saved["cache_hit"] = True
         return saved
+    if mode == "fixture":
+        from retailers.fixture_acquisition import fixture_product_details
+        details = fixture_product_details(canonical, retailer)
+        _cache_put(key, details, cache_ttl)
+        return details
     stop_at = deadline if deadline is not None else monotonic() + 15
     if driver is None:
         from core.browser import browser_session
@@ -27,5 +34,6 @@ def get_product_details(url, retailer, *, driver=None, deadline=None, cache_ttl=
     else:
         details = _load_with_driver(driver, canonical, retailer, stop_at)
     details["cache_hit"] = False
+    details.update(source_fields(mode))
     _cache_put(key, details, cache_ttl)
     return details

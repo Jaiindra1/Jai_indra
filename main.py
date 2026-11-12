@@ -16,6 +16,7 @@ from services.product_details import product_path, load_product, inr, InvalidPro
 from services.selected_product import load_selected_product
 from services.product_comparison import compare_product
 from retailers.products import get_product_details, ProductDetailError
+from services.retailer_mode import RetailerModeError
 
 
 app = Flask(
@@ -37,6 +38,14 @@ logging.getLogger("werkzeug").addFilter(ProductDetailsAccessLogFilter())
 _browser_health_lock = Lock()
 app.jinja_env.filters["inr"] = inr
 REACT_DIST = Path(__file__).resolve().parent / "Frontend" / "Sarathi" / "dist"
+
+
+@app.errorhandler(RetailerModeError)
+def retailer_mode_error(error):
+    response = jsonify({"success": False, "error": "invalid_retailer_mode", "message": str(error)})
+    response.status_code = 500
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def react_app():
@@ -92,6 +101,8 @@ def retailer_product_details_api():
         status = 400 if error.reason == "invalid_url" else 504 if error.reason == "deadline_exceeded" else 502
         response = jsonify({"success": False, "reason": error.reason, "message": str(error)})
         response.status_code = status
+    except RetailerModeError:
+        raise
     except Exception as error:
         diagnostics.event("product_detail_failed", retailer="Flipkart", **diagnostics.error_details(error))
         response = jsonify({"success": False, "reason": "retrieval_failed",

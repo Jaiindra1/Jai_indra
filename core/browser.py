@@ -135,8 +135,6 @@ def _explicit_paths():
         # fall through to Selenium Manager/network downloads in a request.
         bundle = _bundle_dir()
         browser, driver = str(bundle / "chromium"), str(bundle / "chromedriver")
-    if not browser and sys.platform == "win32":
-        browser, driver = _windows_local_paths()
     if not browser and os.getenv("RENDER", "").lower() == "true":
         raise RuntimeError("Render requires CHROME_BINARY_PATH and CHROMEDRIVER_PATH; runtime downloads are disabled.")
     return tuple(os.path.expandvars(os.path.expanduser(p)) for p in (browser, driver))

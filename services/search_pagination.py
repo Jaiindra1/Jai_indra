@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+from contextlib import nullcontext
 from time import monotonic, time
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 
@@ -18,6 +19,7 @@ from services.search_service import detect_category
 from services.specification_extractor import extract_highlights
 from services.product_normalizer import normalize_price
 from services.specification_payload import bounded_specifications
+from services.retailer_mode import retailer_mode, source_fields
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_SIZE = 8
@@ -89,6 +91,7 @@ def decode_cursor(token):
             isinstance(state.get("failures", {}), dict)
             and set(state.get("failures", {})).issubset({"Amazon", "Flipkart"})
             and all(type(n) is int and 0 <= n <= 2 for n in state.get("failures", {}).values()),
+            state.get("mode") == retailer_mode(),
         ]
         if not all(checks):
             raise ValueError("Invalid cursor state.")
@@ -143,6 +146,7 @@ def normalize_listing(item, query, retailer):
     normalized = product.to_dict()
     normalized["id"] = identity[0]
     normalized["captured_at"] = int(time())
+    normalized.update(source_fields())
     if not specs_complete:
         normalized["specifications_complete"] = False
     return normalized
@@ -150,6 +154,7 @@ def normalize_listing(item, query, retailer):
 
 def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritize_pending=False):
     started = monotonic()
+    mode = retailer_mode()
     if cursor is not None:
         state = decode_cursor(cursor)
     else:
@@ -158,7 +163,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritiz
         if not isinstance(first_retailer, str) or first_retailer not in {"Amazon", "Flipkart"}:
             raise ValueError("Invalid retailer.")
         state = {"v": 1, "q": query.strip(), "pages": {"Flipkart": 1, "Amazon": 1},
-                 "turn": first_retailer, "buffer": [], "seen": [], "warnings": []}
+                 "turn": first_retailer, "buffer": [], "seen": [], "warnings": [], "mode": mode}
     deadline = started + (13 if cursor is None else 18)
     request_warnings = []
     pending = next((retailer for retailer, page in state["pages"].items() if page == 1), None) if cursor and prioritize_pending else None
@@ -172,7 +177,9 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritiz
     if not state["buffer"] and any(state["pages"].values()):
         operation_stage = "browser_startup"
         try:
-            with browser_session(scraping=True, deadline=deadline, owner="search_pagination") as driver:
+            session = (nullcontext(None) if mode == "fixture" else
+                       browser_session(scraping=True, deadline=deadline, owner="search_pagination"))
+            with session as driver:
                 operation_stage = "retailer_processing"
                 # One process reused sequentially if the preferred retailer
                 # fails. Return as soon as one real marketplace page is ready.
@@ -256,7 +263,8 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritiz
     result = {"items": items, "products": items, "next_cursor": token, "has_more": has_more,
               "warnings": state["warnings"], "pending_retailers": [r for r, p in state["pages"].items() if p == 1],
               "retry_delay_ms": retry_delay,
-              "elapsed_ms": round(elapsed * 1000), "success": True,
+              "elapsed_ms": round(elapsed * 1000), "success": True, "query": state["q"],
+              **source_fields(mode),
               "message": "Products found successfully." if items else "Checking remaining retailers." if has_more else "No additional products found."}
     diagnostics.event("search_page_finished", stage="response", products=len(items),
                       has_more=has_more, seconds=elapsed, warnings=len(state["warnings"]))

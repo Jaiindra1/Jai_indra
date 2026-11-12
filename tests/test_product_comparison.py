@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+os.environ["RETAILER_MODE"] = "fixture"
+
 from core.browser import BrowserBusy
 from retailers.outcomes import RetailerSearchError
 from services.ai.ai_config import AIConfig
@@ -15,7 +17,8 @@ from services.product_details import product_path, load_product, InvalidProductL
 def product(name, retailer="Flipkart", **configuration):
     return {"name": name, "retailer": retailer, "url": "https://www.flipkart.com/item/p/x?pid=TEST123",
             "price": 100000.0, "brand": configuration.pop("brand", None),
-            "selected_configuration": configuration, "specifications": {}, "highlights": []}
+            "selected_configuration": configuration, "specifications": {}, "highlights": [],
+            "data_source": "fixture", "is_live": False}
 
 
 class FakeClient:
@@ -27,13 +30,16 @@ class FakeClient:
 
 class ComparisonTests(unittest.TestCase):
     def test_flipkart_targets_amazon(self):
-        with patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
+        item = product("iPhone 15 128GB"); item.update(data_source="live", is_live=True)
+        with patch.dict(os.environ, {"RETAILER_MODE": "live"}), \
+             patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
              patch("services.product_comparison.browser_session", side_effect=BrowserBusy()):
-            self.assertEqual(compare_product(product("iPhone 15 128GB"))["retailer"], "Amazon")
+            self.assertEqual(compare_product(item)["retailer"], "Amazon")
 
     def test_amazon_targets_flipkart(self):
-        item = product("iPhone 15 128GB", retailer="Amazon"); item["url"] = "https://www.amazon.in/dp/B012345678"
-        with patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
+        item = product("iPhone 15 128GB", retailer="Amazon"); item.update(url="https://www.amazon.in/dp/B012345678", data_source="live", is_live=True)
+        with patch.dict(os.environ, {"RETAILER_MODE": "live"}), \
+             patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
              patch("services.product_comparison.browser_session", side_effect=BrowserBusy()):
             self.assertEqual(compare_product(item)["retailer"], "Flipkart")
 
@@ -154,17 +160,21 @@ class ComparisonTests(unittest.TestCase):
         self.assertNotEqual(first, second)
 
     def test_browser_busy_status(self):
-        with patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
+        item = product("iPhone 15"); item.update(data_source="live", is_live=True)
+        with patch.dict(os.environ, {"RETAILER_MODE": "live"}), \
+             patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
              patch("services.product_comparison.browser_session", side_effect=BrowserBusy()):
-            self.assertEqual(compare_product(product("iPhone 15"))["status"], "waiting")
+            self.assertEqual(compare_product(item)["status"], "waiting")
 
     def test_retailer_timeout_status(self):
         manager = unittest.mock.MagicMock(); manager.__enter__.return_value = object()
-        with patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
+        item = product("iPhone 15"); item.update(data_source="live", is_live=True)
+        with patch.dict(os.environ, {"RETAILER_MODE": "live"}), \
+             patch("services.product_comparison.optimized_query", return_value=("phone", {})), \
              patch("services.product_comparison.browser_session", return_value=manager), \
              patch("services.product_comparison.get_product_details", return_value={}), \
              patch("services.product_comparison.scrape_page", side_effect=RetailerSearchError("Amazon", "timeout")):
-            self.assertEqual(compare_product(product("iPhone 15"))["status"], "unavailable")
+            self.assertEqual(compare_product(item)["status"], "unavailable")
 
 
 if __name__ == "__main__": unittest.main()

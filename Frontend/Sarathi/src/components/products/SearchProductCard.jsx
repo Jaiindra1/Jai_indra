@@ -15,6 +15,7 @@ export default function SearchProductCard({ product }) {
   const linkProps = detail ? { to: detail, state: { returnTo: location.pathname + location.search } }
     : { href: retailerUrl, target: '_blank', rel: 'noopener noreferrer' };
   return <article className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-outline-variant/30 bg-white shadow-sm transition-shadow hover:shadow-md">
+    {!product.is_live ? <p className="bg-tertiary-fixed px-4 py-2 text-center text-xs font-semibold text-on-tertiary-fixed-variant">Demo data — not live retailer prices</p> : null}
     <div className="flex items-center justify-between gap-3 px-5 pt-4">
       <span className="rounded-full bg-surface-container-low px-3 py-1 text-xs font-semibold text-primary">{product.retailer || 'Retailer'}</span>
       {product.rating != null && <span className="flex items-center gap-1 text-xs text-on-surface-variant" aria-label={'Rating: ' + product.rating}>

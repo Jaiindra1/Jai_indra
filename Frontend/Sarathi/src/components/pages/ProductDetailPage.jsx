@@ -67,6 +67,7 @@ export default function ProductDetailPage() {
         <p className="mt-3 text-sm text-on-surface-variant">{error}</p>
         <button type="button" onClick={retry} className="mt-4 rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold text-primary">Retry product details</button>
       </section> : product && product.id === id && shownProduct ? <>
+        {!shownProduct.is_live ? <aside className="rounded-xl border border-tertiary/30 bg-tertiary-fixed p-4 text-center text-sm font-semibold text-on-tertiary-fixed-variant">Demo data — not live retailer prices</aside> : null}
         <ProductDetailStatus product={shownProduct} onRetry={retry} />
         <nav aria-label="Product sections" className="flex flex-wrap gap-x-6 gap-y-3 border-b border-outline-variant/40 pb-4 text-sm font-semibold text-on-surface-variant">
           <a href="#product-overview" className="hover:text-primary">Overview</a>

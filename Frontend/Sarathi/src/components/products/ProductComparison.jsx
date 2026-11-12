@@ -67,6 +67,7 @@ export default function ProductComparison({ product, token }) {
       <button type="button" onClick={compare} disabled={state.loading} className="rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold text-primary disabled:opacity-60">{state.loading ? 'Comparing…' : 'Refresh comparison'}</button>
     </div>
     <div className="p-5 md:p-6">
+      {((result && !result.is_live) || !product.is_live) ? <p className="mb-4 rounded-lg bg-tertiary-fixed p-3 text-center text-sm font-semibold text-on-tertiary-fixed-variant">Demo data — not live retailer prices</p> : null}
       <div className="mb-5 rounded-xl bg-surface-container-low p-4 text-sm"><p className="font-semibold">Selected on {product.retailer}: {displayPrice(product.price)}</p><p className="mt-1 text-on-surface-variant">{product.name}</p></div>
       {state.loading ? <HamsterLoader compact label="Checking the opposite retailer" />
         : state.error ? <p role="alert" className="rounded-xl bg-error/10 p-4 text-sm text-error">{state.error}</p>

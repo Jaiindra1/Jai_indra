@@ -9,6 +9,7 @@ from core.browser import BrowserBusy
 from core import search_diagnostics as diagnostics
 from retailers.products import get_product_details, ProductDetailError
 from services.product_details import load_product
+from services.retailer_mode import require_source_mode
 
 MESSAGES = {
     "blocked_page": "The retailer restricted access. Showing the earlier search result; current details could not be checked.",
@@ -20,6 +21,7 @@ MESSAGES = {
 def load_selected_product(token, *, force_refresh=False):
     """Validate the signed link before any browser activity or network request."""
     snapshot = load_product(token)
+    require_source_mode(snapshot)
     product = dict(snapshot)
     try:
         details = get_product_details(snapshot["url"], snapshot["retailer"],

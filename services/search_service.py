@@ -9,6 +9,7 @@ from retailers.amazon import search_amazon
 from retailers.outcomes import AllRetailersFailed, RetailerSearchError
 from services.specification_extractor import extract_highlights
 from urllib.parse import urlsplit, urlunsplit
+from services.retailer_mode import retailer_mode, source_fields
 
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
         raise ValueError("Please enter a product name to search.")
 
     max_results = max(1, min(max_results, 20))
+    mode = retailer_mode()
 
     # Store results from each retailer separately.
     retailer_results = {}
@@ -90,11 +92,15 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
         retailer_started = monotonic()
         diagnostics.event("retailer_dispatch", retailer=retailer_name, stage="browser_startup")
         try:
-            retailer_results[retailer_name] = search_function(
-                query=query,
-                max_results=max_results,
-                raise_on_error=True,
-            )
+            if mode == "fixture":
+                from retailers.fixture_acquisition import fixture_search_page
+                retailer_results[retailer_name] = fixture_search_page(retailer_name, query, 1).items[:max_results]
+            else:
+                retailer_results[retailer_name] = search_function(
+                    query=query,
+                    max_results=max_results,
+                    raise_on_error=True,
+                )
             diagnostics.event("retailer_completed", retailer=retailer_name,
                               products=len(retailer_results[retailer_name]),
                               seconds=round(monotonic() - retailer_started, 3))
@@ -168,7 +174,7 @@ def search_products(query: str, max_results: int = 20) -> list[dict]:
                 availability=item.get("availability"),
             )
 
-            products.append(product.to_dict())
+            products.append({**product.to_dict(), **source_fields(mode)})
 
     diagnostics.event("processing_finished", stage="normalization", products=len(products))
-    return SearchResults(products, {"enabled": False, "mode": "live_only"})
+    return SearchResults(products, {"enabled": False, "mode": mode})

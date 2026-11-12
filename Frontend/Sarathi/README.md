@@ -19,8 +19,13 @@ The header search also opens this page. It uses the original Flask search behind
 Run the Flask backend from the repository root in one terminal:
 
 ```powershell
+$env:RETAILER_MODE = "fixture"
 python main.py
 ```
+
+Fixture mode parses saved Amazon and Flipkart HTML through the same production
+parsers and visibly labels all prices as demo data. Set `RETAILER_MODE=live` only
+where Selenium is permitted to start; there is no automatic fixture fallback.
 
 Run `npm run dev` from this frontend folder in another terminal. Vite proxies
 `/api`, `/static`, and `/product/` to `http://127.0.0.1:5000`. For a different backend

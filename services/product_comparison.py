@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from contextlib import nullcontext
 from time import monotonic, time
 
 from core.browser import BrowserBusy, browser_session
@@ -10,6 +11,7 @@ from retailers.pagination import scrape_page
 from retailers.products import get_product_details, ProductDetailError
 from services.ai.ai_provider import AIProvider, AIUnavailable
 from services.search_pagination import normalize_listing
+from services.retailer_mode import retailer_mode, require_source_mode, source_fields
 
 QUERY_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["search_query"],
                 "properties": {key: {"type": ["string", "null"]} for key in
@@ -63,10 +65,13 @@ def attributes(product):
         explicit_ram = bool(re.search(r"\b\d+\s*GB\s+(?:RAM|unified\s+memory|system\s+memory)\b", text, re.I))
         if not (ram_source.startswith("specifications:") or explicit_ram):
             ram = None
+    def capacity(value):
+        match = re.search(r"\b(\d+(?:\.\d+)?)\s*(GB|TB)\b", str(value or ""), re.I)
+        return (f"{float(match.group(1)):g}{match.group(2).upper()}" if match else value)
     return {"brand": product.get("brand"), "model": family or product.get("series"),
             "processor": _match(r"\b((?:apple\s+)?M\d+(?:\s+(?:pro|max|ultra))?)\b", text),
-            "ram": ram,
-            "storage": selected.get("storage") or normalized.get("storage") or _match(r"\b(\d+(?:\.\d+)?\s*(?:GB|TB))\s+(?:SSD|storage)", text),
+            "ram": capacity(ram),
+            "storage": capacity(selected.get("storage") or normalized.get("storage") or _match(r"\b(\d+(?:\.\d+)?\s*(?:GB|TB))\s+(?:SSD|storage)", text)),
             "display": display,
             "color": selected.get("color")}
 
@@ -154,16 +159,20 @@ def _shortlist(selected, candidates):
 
 def compare_product(product, provider=None, deadline_seconds=32):
     started, provider = monotonic(), provider or AIProvider()
+    mode = require_source_mode(product)
     deadline = started + deadline_seconds
     target = "Amazon" if product["retailer"] == "Flipkart" else "Flipkart"
     query, ai_query = deterministic_query(product), {"provider": None, "used": False, "fallback": True}
     response = {"status": "unavailable", "selected_product": product, "matched_product": None,
                 "potential_savings": None, "retailer": target, "query": query, "ai_query": ai_query,
-                "candidates": [], "checked_at": int(time()), "message": target + " could not be checked."}
+                "candidates": [], "checked_at": int(time()), "message": target + " could not be checked.",
+                **source_fields(mode)}
     _trace("comparison_started", selected_retailer=product.get("retailer"), target_retailer=target,
            snapshot_name=product.get("name"), snapshot_price=product.get("price"), initial_query=query)
     try:
-        with browser_session(scraping=True, wait_timeout=5, deadline=deadline, owner="product_comparison") as driver:
+        session = (nullcontext(None) if mode == "fixture" else
+                   browser_session(scraping=True, wait_timeout=5, deadline=deadline, owner="product_comparison"))
+        with session as driver:
             details = get_product_details(product["url"], product["retailer"], driver=driver, deadline=deadline)
             product = {**product, **details, "id": product.get("id"), "retailer": product["retailer"], "url": product["url"]}
             _trace("selected_product_verified", name=product.get("name"), price=product.get("price"),

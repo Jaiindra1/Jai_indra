@@ -7,6 +7,7 @@ from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 from services.product_normalizer import normalize_price
 from services.search_pagination import signing_key, listing_identity
 from services.specification_payload import bounded_specifications
+from services.retailer_mode import VALID_MODES, require_source_mode
 
 MAX_TOKEN = 7000
 MAX_AGE = 24 * 60 * 60
@@ -39,6 +40,9 @@ def _snapshot(product):
     highlights = product.get("highlights") or []
     specs = product.get("specifications") or {}
     specs, complete = bounded_specifications(specs)
+    source = product.get("data_source")
+    if source not in VALID_MODES:
+        raise InvalidProductLink("Product data source is missing or invalid.")
     return {"id": identity[0], "name": name.strip()[:500], "retailer": retailer,
             "url": identity[1], "price": normalize_price(product.get("price")),
             "original_price": normalize_price(product.get("original_price")),
@@ -47,7 +51,8 @@ def _snapshot(product):
             "availability": str(product.get("availability") or "Confirm with retailer")[:120],
             "highlights": [text[:180] for text in highlights[:8] if isinstance(text, str)] if isinstance(highlights, list) else [],
             "specifications": specs,
-            "specifications_complete": complete and product.get("specifications_complete", True) is True}
+            "specifications_complete": complete and product.get("specifications_complete", True) is True,
+            "data_source": source, "is_live": source == "live"}
 
 
 def _rating(value):
@@ -76,6 +81,7 @@ def load_product(token):
         if not isinstance(data, dict) or data.get("v") != 1 or type(data.get("captured")) is not int:
             raise ValueError("Invalid product data.")
         product = _snapshot(data["product"])
+        require_source_mode(product)
         product["captured_label"] = datetime.fromtimestamp(data["captured"], timezone(timedelta(hours=5, minutes=30))).strftime("%d %b %Y, %I:%M %p IST")
         original, current = product["original_price"], product["price"]
         product["saving"] = round(original - current, 2) if original and current and original > current else None
