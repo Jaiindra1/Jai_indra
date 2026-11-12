@@ -1,5 +1,8 @@
+import logging
+import os
 import re
 from threading import Lock
+from time import monotonic
 
 from flask import Flask, render_template, request, jsonify
 
@@ -9,8 +12,9 @@ from core import search_diagnostics as diagnostics
 from core.browser import browser_health
 from services.search_pagination import search_page, InvalidCursor, SearchUnavailable
 from services.product_details import product_path, load_product, inr, InvalidProductLink, ExpiredProductLink
-from services.product_comparison import compare_product, comparison_target, comparison_query
-from retailers.pagination import page_url
+from services.selected_product import load_selected_product
+from services.product_comparison import compare_product
+from retailers.products import get_product_details, ProductDetailError
 
 
 app = Flask(
@@ -19,6 +23,16 @@ app = Flask(
     static_folder="public/static",
     static_url_path="/static",
 )
+
+
+class ProductDetailsAccessLogFilter(logging.Filter):
+    """Keep verbose signed product-detail URLs out of the development console."""
+
+    def filter(self, record):
+        return "GET /api/products/" not in record.getMessage()
+
+
+logging.getLogger("werkzeug").addFilter(ProductDetailsAccessLogFilter())
 _browser_health_lock = Lock()
 app.jinja_env.filters["inr"] = inr
 
@@ -27,8 +41,6 @@ app.jinja_env.filters["inr"] = inr
 def product_detail(token):
     try:
         product = load_product(token)
-        product["comparison_retailer"] = comparison_target(product)
-        product["comparison_search_url"] = page_url(product["comparison_retailer"], comparison_query(product), 1)
         response = app.make_response(render_template("product_detail.html", product=product, error=None))
     except InvalidProductLink as error:
         response = app.make_response((render_template("product_detail.html", product=None, error=str(error)),
@@ -38,25 +50,65 @@ def product_detail(token):
     return response
 
 
+@app.get("/api/products/<token>")
+def product_snapshot_api(token):
+    """Return retailer-page details, or an explicitly labelled search fallback."""
+    try:
+        product = load_selected_product(token, force_refresh=request.args.get("refresh") == "1")
+        response = jsonify({"success": True, "product": product})
+    except InvalidProductLink as error:
+        response = jsonify({"success": False, "message": str(error)})
+        response.status_code = 410 if isinstance(error, ExpiredProductLink) else 404
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.get("/api/products/details")
+def retailer_product_details_api():
+    """Fetch one validated public retailer page on demand; search stays lightweight."""
+    retailer = (request.args.get("retailer") or "").strip().casefold()
+    if retailer != "flipkart":
+        return jsonify({"success": False, "message": "retailer must be flipkart"}), 400
+    url = request.args.get("url", "")
+    try:
+        product = get_product_details(url, "Flipkart", deadline=monotonic() + 25,
+                                      force_refresh=request.args.get("refresh") == "1")
+        product["detail_url"] = product_path(product)
+        response = jsonify({"success": True, "product": product})
+    except ProductDetailError as error:
+        status = 400 if error.reason == "invalid_url" else 504 if error.reason == "deadline_exceeded" else 502
+        response = jsonify({"success": False, "reason": error.reason, "message": str(error)})
+        response.status_code = status
+    except Exception as error:
+        diagnostics.event("product_detail_failed", retailer="Flipkart", **diagnostics.error_details(error))
+        response = jsonify({"success": False, "reason": "retrieval_failed",
+                            "message": "Flipkart product details could not be retrieved."})
+        response.status_code = 503
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.post("/api/product/compare")
-def product_compare():
-    with diagnostics.request_scope() as request_id:
-        data = request.get_json(silent=True)
-        try:
-            if not isinstance(data, dict) or not isinstance(data.get("token"), str):
-                raise InvalidProductLink("Choose a product from search to compare its prices.")
-            product = load_product(data["token"])
-            result = compare_product(product)
-            response = jsonify(result)
-            if result["status"] == "busy":
-                response.status_code = 503
-                response.headers["Retry-After"] = "2"
-        except InvalidProductLink as error:
-            response = jsonify({"status": "invalid_product", "message": str(error)})
-            response.status_code = 410 if isinstance(error, ExpiredProductLink) else 400
-        response.headers["X-Search-Request-ID"] = request_id
-        response.headers["Cache-Control"] = "no-store"
-        return response
+def product_compare_api():
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict) or not isinstance(data.get("token"), str):
+            raise InvalidProductLink("Choose a product from search before comparing prices.")
+        # Verify the signed snapshot before the comparison service opens any page.
+        selected = load_product(data["token"])
+        result = compare_product(selected)
+        response = jsonify(result)
+        if result["status"] == "waiting":
+            response.status_code = 503
+            response.headers["Retry-After"] = "3"
+    except InvalidProductLink as error:
+        response = jsonify({"status": "invalid_product", "message": str(error)})
+        response.status_code = 410 if isinstance(error, ExpiredProductLink) else 400
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @app.get("/api/browser-health")
@@ -297,4 +349,4 @@ def feedback():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=int(os.getenv("PORT", "5000")), debug=False)

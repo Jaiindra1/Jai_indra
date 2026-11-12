@@ -2,6 +2,7 @@
 from urllib.parse import urlencode
 
 from retailers import amazon, flipkart
+from retailers.detail_enrichment import enrich_listing as enrich_product_listing
 from retailers.navigation import RetailerPage, next_page_number, scrape_search_page
 
 
@@ -21,3 +22,8 @@ def scrape_page(driver, retailer, query, page, deadline):
     return scrape_search_page(driver, retailer, page_url(retailer, query, page), page, deadline,
                               flipkart.PRODUCT_CARD_SELECTOR + ', a[href*="/p/"]',
                               flipkart.parse_product_cards)
+
+
+def enrich_listing(driver, retailer, listing, deadline):
+    """Bounded detail-page enrichment using the caller-owned browser."""
+    return enrich_product_listing(driver, retailer, listing, deadline)

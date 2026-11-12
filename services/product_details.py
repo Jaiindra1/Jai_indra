@@ -6,6 +6,7 @@ from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 
 from services.product_normalizer import normalize_price
 from services.search_pagination import signing_key, listing_identity
+from services.specification_payload import bounded_specifications
 
 MAX_TOKEN = 7000
 MAX_AGE = 24 * 60 * 60
@@ -37,6 +38,7 @@ def _snapshot(product):
         image = None
     highlights = product.get("highlights") or []
     specs = product.get("specifications") or {}
+    specs, complete = bounded_specifications(specs)
     return {"id": identity[0], "name": name.strip()[:500], "retailer": retailer,
             "url": identity[1], "price": normalize_price(product.get("price")),
             "original_price": normalize_price(product.get("original_price")),
@@ -44,7 +46,8 @@ def _snapshot(product):
             "category": str(product.get("category") or "Product")[:80],
             "availability": str(product.get("availability") or "Confirm with retailer")[:120],
             "highlights": [text[:180] for text in highlights[:8] if isinstance(text, str)] if isinstance(highlights, list) else [],
-            "specifications": {str(key)[:80]: str(value)[:250] for key, value in list(specs.items())[:12]} if isinstance(specs, dict) else {}}
+            "specifications": specs,
+            "specifications_complete": complete and product.get("specifications_complete", True) is True}
 
 
 def _rating(value):

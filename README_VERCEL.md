@@ -41,40 +41,14 @@ npx --yes --package tailwindcss@3.4.17 tailwindcss -c scripts/product-tailwind.c
 The hamster animation uses 12.6px instead of its previous effective 14px base,
 reducing all em-based dimensions by 10%.
 
-## Live cross-retailer comparison
-
-Opening a signed product page automatically calls `POST /api/product/compare`
-with its snapshot token. Both retailer rows remain visible. The other retailer
-is searched separately for the selected model and variant; this does not delay
-the initial search response. The existing Selenium page adapters and browser
-lock are reused, with a 14-second navigation/readiness budget and no database.
-
-Matching checks brand, model identifiers, model family/suffix, network variant,
-storage, RAM and colour where listed. Phone listings with incomplete selected
-variant details cannot produce a verified comparison. A cheaper different
-variant is rejected. Similar listings missing required evidence appear in a
-separate, explicitly unverified panel, without a claimed saving. This conservative
-listing matcher can miss equivalent wording and does not replace checking the
-retailer's final product options and checkout price.
-
-Unavailable retailers retain their row, a Retry action and a direct retailer
-search link; no price is fabricated. Structured logs include `comparison_finished`,
-`comparison_retailer_failed`, execution region and safe navigation HTTP status
-and body length. No retailer response text or query is logged by those probes. A generic Amazon
-503 can also trigger one diagnostic-only, two-second direct Python HTTPS probe
-per worker to compare network outcomes; it never supplies product results.
-The deployment uses the single Mumbai (`bom1`) region, supported on Hobby,
-to reduce distance to Indian marketplaces. Region locality does not guarantee
-Amazon will accept requests from Vercel infrastructure.
-
 ## Existing Amazon scraper and upstream failures
 
 `retailers/amazon.py` remains the Amazon implementation. Its six title, price,
 original-price, image, rating and card extraction functions are unchanged.
 `search_amazon()` and `search_amazon_page()` share one bounded navigation path.
 `retailers/pagination.py` delegates Amazon directly to that module, so initial
-Amazon requests, continuation/infinite scrolling and cross-retailer comparison
-all use the same parser and URL builder. Caller-owned browsers are reused.
+Amazon requests and continuation/infinite scrolling use the same parser and URL
+builder. Caller-owned browsers are reused.
 
 The first page uses the original working `/s?k=...` URL, with `page` added only
 for subsequent pages. Font blocking and eager navigation preserve image URLs.
@@ -94,17 +68,16 @@ errors. Logs record HTTP status, known marketplace host, search-path boolean,
 redirect count, DNS/connect/response timings and DOM size. They never contain
 response text, query strings, cookies, full URLs or credentials. A generic 503
 alone is not proof of an access restriction; only an explicit marker is labelled
-as one. Public search/comparison messages show the sanitized retailer failure.
+as one. Public search messages show the sanitized retailer failure.
 
 Local Windows verification returned 16 Amazon products on each of pages 1 and 2,
-23 Flipkart products on page 1 and 6 on page 2. Olive 8 GB/128 GB variant matching
-returned real prices on both retailers. Both Chrome 156 and Chrome 153 headless
+23 Flipkart products on page 1 and 6 on page 2. Both Chrome 156 and Chrome 153 headless
 shell returned Amazon products on Windows. Vercel packages official Linux Chrome
 156.0.8078.80 with matching ChromeDriver 156.0.8078.80. These Windows checks do
 not prove Linux/Vercel access; before this change, deployed Amazon requests
 repeatedly returned HTTP 503. An initial production check of this change returned eight real Amazon products
-in 4.75 seconds, but other searches and comparison still returned 503. Access
-was intermittent; this is not a claim of reliable production comparison.
+in 4.75 seconds, but other searches still returned 503. Access
+was intermittent; this is not a claim of reliable production access.
 Production must be checked after every deployment.
 
 Explicit live verification (contacts the retailers):
@@ -114,7 +87,7 @@ py scripts/verify_amazon_search.py --live-local --query "Samsung A56"
 py scripts/verify_amazon_search.py --base-url https://jai-indra.vercel.app --query "Samsung A56"
 ```
 
-The scripts print measured counts, timings, pagination and comparison outcomes;
+The scripts print measured counts, timings and pagination outcomes;
 reports stay in ignored `.browser-downloads/`. Unit tests use synthetic HTML
 only; production never returns these fixtures.
 
@@ -158,8 +131,8 @@ and 640 identities; hitting a limit is reported in warnings. Small or exhausted
 marketplace pages can legitimately return fewer than eight listings.
 
 The browser runs with eager page loading and blocks font network requests.
-Image blocking was tested and rejected: three of 24 Flipkart listings lost image
-metadata in the comparison. Images remain enabled and parsers also inspect lazy
+Image blocking was tested and rejected because listings lost image metadata.
+Images remain enabled and parsers also inspect lazy
 image attributes; eager navigation avoids waiting for every download. A single
 browser is reused sequentially if another retailer must be attempted. A semaphore
 and a `/tmp` file lock restrict browser use within a function instance, including

@@ -194,6 +194,18 @@ def extract_product_from_card(card, base_url=AMAZON_URL):
     if "currently unavailable" in card_text:
         availability = "Unavailable"
 
+    feature_lines = []
+    for element in card.select("ul li, .a-row.a-size-base, .a-color-secondary"):
+        value = clean_text(element.get_text(" ", strip=True))
+        if value and len(value) <= 180 and value not in feature_lines and "â‚¹" not in value:
+            feature_lines.append(value)
+        if len(feature_lines) >= 8:
+            break
+
+    specifications = {"ASIN": asin}
+    if feature_lines:
+        specifications["features"] = feature_lines
+
     return {
         "name": name,
         "price": price,
@@ -202,7 +214,7 @@ def extract_product_from_card(card, base_url=AMAZON_URL):
         "url": url,
         "image_url": image_url,
         "retailer": "Amazon",
-        "specifications": {},
+        "specifications": specifications,
         "availability": availability,
     }
 

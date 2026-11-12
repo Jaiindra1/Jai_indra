@@ -15,7 +15,7 @@ import sys
 import tarfile
 import tempfile
 from threading import Lock, BoundedSemaphore, Timer
-from time import monotonic
+from time import monotonic, sleep
 from xml.sax.saxutils import escape
 
 from selenium import webdriver
@@ -135,9 +135,54 @@ def _explicit_paths():
         # fall through to Selenium Manager/network downloads in a request.
         bundle = _bundle_dir()
         browser, driver = str(bundle / "chromium"), str(bundle / "chromedriver")
+    if not browser and sys.platform == "win32":
+        browser, driver = _windows_local_paths()
     if not browser and os.getenv("RENDER", "").lower() == "true":
         raise RuntimeError("Render requires CHROME_BINARY_PATH and CHROMEDRIVER_PATH; runtime downloads are disabled.")
     return tuple(os.path.expandvars(os.path.expanduser(p)) for p in (browser, driver))
+
+
+def _version_tuple(value):
+    try:
+        return tuple(int(part) for part in value.split("."))
+    except (AttributeError, ValueError):
+        return ()
+
+
+@lru_cache(maxsize=1)
+def _windows_local_paths():
+    """Bypass Selenium Manager when Windows Application Control blocks it."""
+    chrome_roots = []
+    for variable in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        if base := os.getenv(variable):
+            root = Path(base) / "Google/Chrome/Application"
+            executable = root / "chrome.exe"
+            if executable.is_file():
+                versions = sorted((_version_tuple(item.name) for item in root.iterdir()
+                                   if item.is_dir() and _version_tuple(item.name)), reverse=True)
+                chrome_roots.append((versions[0] if versions else (), executable))
+    if not chrome_roots:
+        return "", ""
+    chrome_version, executable = max(chrome_roots, key=lambda item: item[0])
+    cache = Path(os.getenv("SE_CACHE_PATH") or Path.home() / ".cache/selenium") / "chromedriver"
+    candidates = []
+    if cache.is_dir():
+        for item in cache.glob("**/chromedriver.exe"):
+            version = next((_version_tuple(part) for part in item.parts if _version_tuple(part)), ())
+            if version and (not chrome_version or version[0] == chrome_version[0]):
+                candidates.append((version, item))
+    if not candidates:
+        return "", ""
+    # Prefer the exact installed Chrome build. A newer cached driver may have
+    # been downloaded but remain blocked by Windows Application Control.
+    _, driver = max(candidates, key=lambda item: (
+        item[0] == chrome_version,
+        item[0][:3] == chrome_version[:3],
+        item[0],
+    ))
+    diagnostics.event("windows_local_binaries", browser_version=".".join(map(str, chrome_version)),
+                      driver_version=driver.parent.name)
+    return str(executable), str(driver)
 
 
 def _navigation_settings():
@@ -329,7 +374,7 @@ def browser_health():
               "startup_success": False, "error_category": None}
     try:
         result.update(binary_availability())
-        with browser_session() as driver:
+        with browser_session(owner="browser_health") as driver:
             driver.set_page_load_timeout(5)
             driver.get("data:text/html,<title>Sandhya browser check</title>")
             if driver.title != "Sandhya browser check":
@@ -347,11 +392,23 @@ def browser_health():
 
 
 @contextmanager
-def browser_session(*, scraping=False):
-    """Create a browser and always close it when the session ends."""
+def browser_session(*, scraping=False, wait_timeout=0, deadline=None, owner="unspecified"):
+    """Acquire the single browser within a bound and always release it.
 
-    if not _browser_slot.acquire(blocking=False):
-        raise BrowserBusy("Browser capacity is busy. Retry shortly.")
+    ``deadline`` is an absolute monotonic timestamp shared with the caller's
+    navigation budget. Waiting never creates a second browser.
+    """
+    wait_timeout = max(0.0, min(float(wait_timeout or 0), 30.0))
+    if deadline is not None:
+        wait_timeout = min(wait_timeout, max(0.0, deadline - monotonic()))
+    waiting_started = monotonic()
+    diagnostics.event("browser_slot_requested", owner=owner, wait_ms=round(wait_timeout * 1000))
+    if not _browser_slot.acquire(timeout=wait_timeout):
+        diagnostics.event("browser_slot_wait_expired", owner=owner,
+                          waited_ms=round((monotonic() - waiting_started) * 1000))
+        raise BrowserBusy("Browser capacity remained busy until the request deadline.")
+    diagnostics.event("browser_slot_acquired", owner=owner,
+                      waited_ms=round((monotonic() - waiting_started) * 1000))
     process_lock = None
     driver = None
     try:
@@ -360,10 +417,17 @@ def browser_session(*, scraping=False):
             # reliance on this lock across different serverless instances.
             import fcntl
             process_lock = open("/tmp/sandhya-browser-slot.lock", "a")
-            try:
-                fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise BrowserBusy("Browser capacity is busy. Retry shortly.") from None
+            while True:
+                try:
+                    fcntl.flock(process_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    remaining = wait_timeout - (monotonic() - waiting_started)
+                    if deadline is not None:
+                        remaining = min(remaining, deadline - monotonic())
+                    if remaining <= 0:
+                        raise BrowserBusy("Browser capacity remained busy until the request deadline.") from None
+                    sleep(min(0.05, remaining))
         driver = create_browser(scraping=scraping)
         yield driver
     finally:
@@ -374,3 +438,4 @@ def browser_session(*, scraping=False):
             if process_lock is not None:
                 process_lock.close()
             _browser_slot.release()
+            diagnostics.event("browser_slot_released", owner=owner)

@@ -17,6 +17,7 @@ from retailers.pagination import scrape_page
 from services.search_service import detect_category
 from services.specification_extractor import extract_highlights
 from services.product_normalizer import normalize_price
+from services.specification_payload import bounded_specifications
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_SIZE = 8
@@ -128,6 +129,7 @@ def normalize_listing(item, query, retailer):
     if price is None:
         return None
     specs = item.get("specifications") if isinstance(item.get("specifications"), dict) else {}
+    retained_specs, specs_complete = bounded_specifications(specs)
     name = item["name"].strip()[:500]
     image = item.get("image_url")
     if not isinstance(image, str) or len(image) > 1600 or urlsplit(image).scheme not in {"http", "https"}:
@@ -135,11 +137,14 @@ def normalize_listing(item, query, retailer):
     product = Product(name=name, price=price, original_price=item.get("original_price"),
                       rating=item.get("rating"), url=identity[1], image_url=image,
                       retailer=retailer, category=detect_category(query, name),
+                      specifications=retained_specs,
                       highlights=extract_highlights(name, item.get("description"), specs)[:5],
                       availability=item.get("availability"))
     normalized = product.to_dict()
     normalized["id"] = identity[0]
     normalized["captured_at"] = int(time())
+    if not specs_complete:
+        normalized["specifications_complete"] = False
     return normalized
 
 
@@ -167,7 +172,7 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritiz
     if not state["buffer"] and any(state["pages"].values()):
         operation_stage = "browser_startup"
         try:
-            with browser_session(scraping=True) as driver:
+            with browser_session(scraping=True, deadline=deadline, owner="search_pagination") as driver:
                 operation_stage = "retailer_processing"
                 # One process reused sequentially if the preferred retailer
                 # fails. Return as soon as one real marketplace page is ready.
@@ -219,7 +224,11 @@ def search_page(query=None, cursor=None, first_retailer="Flipkart", *, prioritiz
                 operation_stage = "browser_cleanup"
         except BrowserBusy:
             diagnostics.event("browser_capacity_busy", stage="browser_startup")
-            raise SearchUnavailable({"items": [], "products": [], "has_more": True,
+            # A fresh search has no resumable cursor yet. Advertising more
+            # pages without a cursor violates the API contract and makes the
+            # client retry an impossible continuation request. The client can
+            # safely restart the original query after this transient 503.
+            raise SearchUnavailable({"items": [], "products": [], "has_more": bool(cursor),
                                      "next_cursor": cursor, "warnings": [],
                                      "message": "Search is busy. Please retry shortly."}, status=503) from None
         except Exception as error:

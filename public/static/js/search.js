@@ -10,6 +10,32 @@ const loaderMessage = document.getElementById("loader-message");
 // Find the product results container.
 const resultsContainer = document.getElementById("results-container");
 
+// Keep AJAX-rendered results available when a product page navigation causes
+// the browser to evict this page from its back/forward cache.
+const SEARCH_STATE_KEY = "sandhya.search-state.v1";
+const SEARCH_RETURN_KEY = "sandhya.search-return-pending";
+let cachedProducts = [];
+
+function persistSearchState(query) {
+    if (!query || !cachedProducts.length) return;
+    try {
+        sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+            query,
+            products: cachedProducts.slice(0, 100)
+        }));
+    } catch {
+        // Search remains usable when storage is unavailable or full.
+    }
+}
+
+function markProductReturnPending() {
+    try {
+        sessionStorage.setItem(SEARCH_RETURN_KEY, "1");
+    } catch {
+        // The browser's back/forward cache can still preserve the page.
+    }
+}
+
 
 // Messages that rotate while products are being fetched.
 const loadingMessages = [
@@ -112,7 +138,10 @@ function wireProductCard(card, detailUrl) {
     card.addEventListener("click", event => {
         if (event.target.closest("a, button, input, select, textarea") || window.getSelection()?.toString()) return;
         if (event.ctrlKey || event.metaKey) window.open(detailUrl, "_blank", "noopener,noreferrer");
-        else window.location.assign(detailUrl);
+        else {
+            markProductReturnPending();
+            window.location.assign(detailUrl);
+        }
     });
 }
 
@@ -314,6 +343,8 @@ const pager = new window.SandhyaPager({
         const renderStarted = performance.now();
         const generation = pager.generation;
         const apiMs = lastApiMs;
+        cachedProducts = append ? cachedProducts.concat(fresh) : fresh.slice();
+        persistSearchState(pager.query);
         displayProducts(fresh, append);
         if (!append && !fresh.length) resultsContainer.replaceChildren(createTextElement("p", data.message || "No matching products found."));
         const warnings = [...new Set((data.warnings || []).map(w =>
@@ -365,6 +396,13 @@ searchForm.addEventListener("submit", event => {
     searchStarted = performance.now();
     window.__sandhyaMetrics = {pages: []};
     notices.textContent = "";
+    cachedProducts = [];
+    try {
+        sessionStorage.removeItem(SEARCH_STATE_KEY);
+        sessionStorage.removeItem(SEARCH_RETURN_KEY);
+    } catch {
+        // Continue with a normal search if storage is unavailable.
+    }
     pager.search(query);
 });
 document.getElementById("product-query").addEventListener("input", () => {
@@ -378,5 +416,40 @@ document.querySelectorAll(".product-card[data-detail-url]").forEach(card => {
     const url = productDetailUrl({detail_url: card.dataset.detailUrl});
     wireProductCard(card, url);
 });
+resultsContainer.addEventListener("click", event => {
+    const link = event.target.closest('a[href^="/product/"]');
+    if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && link.target !== "_blank") {
+        markProductReturnPending();
+    }
+});
+
+function restoreSearchAfterProductReturn() {
+    try {
+        if (sessionStorage.getItem(SEARCH_RETURN_KEY) !== "1") return false;
+        sessionStorage.removeItem(SEARCH_RETURN_KEY);
+        const state = JSON.parse(sessionStorage.getItem(SEARCH_STATE_KEY) || "null");
+        if (!state || typeof state.query !== "string" || !Array.isArray(state.products) || !state.products.length) return false;
+        cachedProducts = state.products;
+        rendered.clear();
+        cachedProducts.forEach(product => rendered.add(product.id || product.url));
+        document.getElementById("product-query").value = state.query;
+        pager.query = state.query;
+        pager.loaded = true;
+        pager.hasMore = false;
+        displayProducts(cachedProducts);
+        pager.emit();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+restoreSearchAfterProductReturn();
 window.addEventListener("pagehide", () => pager.pause());
-window.addEventListener("pageshow", event => { if (event.persisted) { hideLoader(); pager.resume(); } });
+window.addEventListener("pageshow", event => {
+    if (event.persisted) {
+        try { sessionStorage.removeItem(SEARCH_RETURN_KEY); } catch { /* No-op. */ }
+        hideLoader();
+        pager.resume();
+    }
+});

@@ -1,4 +1,5 @@
 import logging
+import re
 from time import monotonic
 from core import search_diagnostics as diagnostics
 
@@ -12,6 +13,36 @@ from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
+CATEGORY_PHRASES = {
+    "Electronics": ("smart phone", "smartphone", "mobile phone", "macbook", "laptop", "notebook computer",
+                    "computer", "tablet", "headphones", "headphone", "earphones", "earphone", "camera",
+                    "television", "smart tv", "monitor", "processor", "speaker", "router", "electronics"),
+    "Home & Kitchen": ("pressure cooker", "vacuum cleaner", "home decor", "mixer grinder", "air fryer",
+                       "cookware", "bedsheet", "curtain", "kitchen appliance", "lamp"),
+    "Beauty & Personal Care": ("face wash", "skin care", "personal care", "shampoo", "perfume",
+                               "moisturizer", "lipstick", "makeup"),
+    "Sports & Fitness": ("cricket bat", "yoga mat", "foot ball", "football", "dumbbell", "treadmill", "fitness"),
+    "Footwear": ("running shoe", "running shoes", "shoe", "shoes", "sneaker", "sneakers", "sandal",
+                 "sandals", "slipper", "slippers", "boot", "boots", "heel", "heels", "footwear"),
+    "Clothing": ("t shirt", "shirt", "jeans", "trousers", "dress", "jacket", "kurta", "saree",
+                 "hoodie", "sweater", "clothing"),
+    "Furniture": ("book shelf", "bookshelf", "sofa", "couch", "chair", "dining table", "table", "bed",
+                  "wardrobe", "mattress", "furniture"),
+    "Toys": ("stuffed animal", "soft toy", "action figure", "teddy", "doll", "puzzle", "lego", "toy", "toys"),
+    "Books": ("text book", "textbook", "novel", "book", "books"),
+}
+
+
+def _category_evidence(value):
+    normalized = " " + re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip() + " "
+    evidence = {}
+    for category, phrases in CATEGORY_PHRASES.items():
+        matches = [phrase for phrase in phrases if f" {phrase} " in normalized]
+        if matches:
+            # Longer phrases are stronger than isolated generic words.
+            evidence[category] = max(len(phrase.split()) * 10 + len(phrase) for phrase in matches)
+    return evidence
+
 
 class SearchResults(list):
     """Preserve the list interface while attaching persistence diagnostics."""
@@ -21,60 +52,16 @@ class SearchResults(list):
 
 
 def detect_category(query: str, product_name: str) -> str:
-    """Guess a broad category using the search query and product title."""
-
-    # Use both values so category detection still works for vague titles.
-    text = f"{query} {product_name}".lower()
-
-    # Check more specific categories before general ones.
-    category_keywords = {
-        "Footwear": [
-            "shoe", "shoes", "sneaker", "sneakers", "sandals",
-            "slippers", "boots", "heels", "footwear",
-        ],
-        "Clothing": [
-            "shirt", "t-shirt", "tshirt", "jeans", "trousers",
-            "dress", "jacket", "kurta", "saree", "clothing",
-            "hoodie", "sweater",
-        ],
-        "Furniture": [
-            "sofa", "couch", "chair", "table", "bed", "wardrobe",
-            "bookshelf", "mattress", "furniture",
-        ],
-        "Toys": [
-            "toy", "toys", "teddy", "doll", "puzzle", "lego",
-            "stuffed animal", "soft toy", "action figure",
-        ],
-        "Electronics": [
-            "phone", "smartphone", "mobile", "laptop", "computer",
-            "tablet", "headphone", "earphone", "camera", "television",
-            "tv", "monitor", "samsung galaxy", "processor",
-            "electronics",
-        ],
-        "Home & Kitchen": [
-            "mixer", "grinder", "cookware", "pressure cooker",
-            "vacuum cleaner", "bedsheet", "curtain", "lamp",
-            "kitchen", "home decor",
-        ],
-        "Beauty & Personal Care": [
-            "shampoo", "perfume", "moisturizer", "lipstick",
-            "face wash", "skin care", "makeup",
-        ],
-        "Books": [
-            "book", "books", "novel", "textbook",
-        ],
-        "Sports & Fitness": [
-            "football", "cricket bat", "yoga mat", "dumbbell",
-            "treadmill", "fitness",
-        ],
-    }
-
-    # Return the first category with a matching keyword.
-    for category, keywords in category_keywords.items():
-        if any(keyword in text for keyword in keywords):
-            return category
-
-    # Keep unknown products instead of inventing a category.
+    """Classify with title-first, whole-word evidence and conservative ties."""
+    for evidence in (_category_evidence(product_name), _category_evidence(query)):
+        if not evidence:
+            continue
+        strongest = max(evidence.values())
+        winners = [category for category, score in evidence.items() if score == strongest]
+        runner_up = max((score for score in evidence.values() if score < strongest), default=0)
+        if len(winners) == 1 and (len(evidence) == 1 or strongest - runner_up >= 10):
+            return winners[0]
+        return "Other"
     return "Other"
 
 
