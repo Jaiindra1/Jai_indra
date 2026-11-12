@@ -1,10 +1,11 @@
 import logging
 import os
 import re
+from pathlib import Path
 from threading import Lock
 from time import monotonic
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 
 from services.search_service import search_products
 from services.feedback_service import send_feedback_email
@@ -35,6 +36,17 @@ class ProductDetailsAccessLogFilter(logging.Filter):
 logging.getLogger("werkzeug").addFilter(ProductDetailsAccessLogFilter())
 _browser_health_lock = Lock()
 app.jinja_env.filters["inr"] = inr
+REACT_DIST = Path(__file__).resolve().parent / "Frontend" / "Sarathi" / "dist"
+
+
+def react_app():
+    """Serve the Vite production entry point when it has been built."""
+    index = REACT_DIST / "index.html"
+    if index.is_file():
+        response = send_from_directory(REACT_DIST, "index.html")
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+    return None
 
 
 @app.get("/product/<token>")
@@ -159,6 +171,9 @@ def is_valid_email(email):
 
 @app.route("/", methods=["GET", "POST"])
 def home():
+
+    if request.method == "GET" and (response := react_app()) is not None:
+        return response
 
     query = ""
     products = []
@@ -346,6 +361,23 @@ def feedback():
             form=form,
             categories=FEEDBACK_CATEGORIES,
         )
+
+
+@app.get("/assets/<path:filename>")
+def react_assets(filename):
+    """Serve immutable files emitted by Vite."""
+    response = send_from_directory(REACT_DIST / "assets", filename)
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
+@app.get("/<path:client_path>")
+def react_client_route(client_path):
+    """Let React Router handle direct visits and browser refreshes."""
+    response = react_app()
+    if response is not None:
+        return response
+    return jsonify({"message": "React frontend has not been built."}), 404
 
 
 if __name__ == "__main__":

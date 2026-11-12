@@ -2,11 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "flask",
   "regions": ["bom1"],
-  "buildCommand": "python scripts/build_browser.py",
+  "buildCommand": "npm ci --prefix Frontend/Sarathi && npm run build --prefix Frontend/Sarathi && python scripts/build_browser.py",
   "functions": {
     "main.py": {
       "maxDuration": 120,
-      "includeFiles": "{templates/**,vendor/browser.tar.gz,vendor/browser-manifest.json,vendor/pagination.key}",
+      "includeFiles": "{templates/**,Frontend/Sarathi/dist/**,vendor/browser.tar.gz,vendor/browser-manifest.json,vendor/pagination.key}",
       "excludeFiles": "{tests/**,.browser-downloads/**,scripts/**}"
     }
   }
